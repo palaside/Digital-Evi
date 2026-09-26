@@ -1,0 +1,188 @@
+/**
+ * ==========================================================================
+ * PROPORTIONAL FIT-TO-SCREEN LAYOUT ARCHITECTURE (NO-SCROLL FRAMEWORK)
+ * Style-Agnostic Structural CSS (Geometry, Spacing & Proportional Typography)
+ * ==========================================================================
+ */
+
+/* --------------------------------------------------------------------------
+   RULE 1: FIT-TO-SCREEN SHELL (ZERO PAGE-LEVEL SCROLL)
+   -------------------------------------------------------------------------- */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100vw;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Strict: ห้ามเกิด scrollbar นอกระบบ 100% */
+}
+
+/* 3-Tier Vertical Shell */
+.app-fit-shell {
+  width: 100vw;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header Tier (Locked Height, No Shrink) */
+.shell-header {
+  height: clamp(72px, 8vh, 92px);
+  min-height: 72px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(16px, 1.8vw, 32px);
+}
+
+/* Main Workspace Tier (Fills remaining height, zero min-height) */
+.shell-workspace {
+  flex: 1;
+  min-height: 0; /* Crucial: ป้องกัน flex item ขยายเกิน viewport */
+  display: grid;
+  padding: clamp(8px, 1vw, 16px);
+  gap: clamp(8px, 1vw, 16px);
+  overflow: hidden;
+}
+
+/* Footer Status Bar Tier (Locked Compact Height) */
+.shell-footer {
+  height: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(16px, 1.8vw, 32px);
+}
+
+/* Inner Scrollable Panel (Only allowed scroll area) */
+.panel-scroll-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   RULE 2: ERGONOMIC CLAMP 3-COLUMN GRID (ULTRAWIDE / 2K / 4K SHIELD)
+   -------------------------------------------------------------------------- */
+.workspace-3col-grid {
+  grid-template-columns: clamp(340px, 22vw, 440px) minmax(480px, 1fr) clamp(340px, 22vw, 440px);
+  height: 100%;
+  width: 100%;
+}
+
+.workspace-column {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workspace-stage-center {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   RULE 3: PROPORTIONAL TYPOGRAPHY & TOUCH TARGET SPECIFICATION
+   -------------------------------------------------------------------------- */
+/* Card / Section Header */
+.typo-section-title {
+  font-size: clamp(15px, 0.95vw, 17px);
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+/* Body / Form Label */
+.typo-label {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.typo-body {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+/* Input Fields (Strict Height >= 40px - 44px) */
+.input-proportional {
+  min-height: 42px;
+  height: 42px;
+  padding: 0 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  width: 100%;
+}
+
+/* Buttons (Strict Height >= 44px - 48px) */
+.btn-proportional-primary {
+  min-height: 46px;
+  height: 46px;
+  padding: 0 20px;
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-proportional-compact {
+  min-height: 38px;
+  height: 38px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Counter Badges / Tags */
+.badge-proportional {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.4;
+  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   RULE 4: THAI TYPOGRAPHY CLEARANCE (PREVENT ACCENT OVERLAPS)
+   -------------------------------------------------------------------------- */
+.thai-clearance-stack {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 0.5vw, 8px); /* ระยะปลอดภัยระหว่างบรรทัดภาษาไทย */
+}
+
+.thai-text-proportional {
+  line-height: 1.6; /* ป้องกันสระบน-วรรณยุกต์ชนสระล่าง */
+}
+
+/* --------------------------------------------------------------------------
+   RULE 5: LOGO & GRAPHIC FIT
+   -------------------------------------------------------------------------- */
+.header-logo-proportional {
+  height: calc(100% - 16px);
+  max-height: 56px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+}

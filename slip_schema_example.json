@@ -1,0 +1,46 @@
+{
+  "document_type": "bank_transfer_slip",
+  "bank": {
+    "name": "กสิกรไทย",
+    "confidence": 0.99
+  },
+  "transaction": {
+    "date": "2026-09-25",
+    "time": "14:32",
+    "amount": 15000,
+    "currency": "THB",
+    "fee": null,
+    "reference_no": "010123456789",
+    "transaction_id": null,
+    "note": "ค่ามัดจำ"
+  },
+  "sender": {
+    "name": "นายสมชาย ใจดี",
+    "bank": "กสิกรไทย",
+    "account_no": "xxx-x-x1234-x"
+  },
+  "receiver": {
+    "name": "นายวิชัย ใจดี",
+    "bank": "ไทยพาณิชย์",
+    "account_no": "xxx-x-x5678-x"
+  },
+  "confidence": {
+    "date": 0.99,
+    "time": 0.99,
+    "amount": 0.99,
+    "reference_no": 0.97,
+    "sender_name": 0.91,
+    "receiver_name": 0.94,
+    "sender_account": 0.93,
+    "receiver_account": 0.95
+  },
+  "raw_text": [
+    "25 ก.ย. 2569 14:32",
+    "15,000.00 บาท",
+    "นายสมชาย ใจดี",
+    "นายวิชัย ใจดี",
+    "เลขที่รายการ 010123456789",
+    "ค่ามัดจำ"
+  ],
+  "warnings": []
+}

@@ -1,26 +1,225 @@
 @import "tailwindcss";
+@import "../styles/layout-framework.css";
+
+/* ==========================================================================
+   GLASSMORPHISM DESIGN TOKENS (Tactical Dark Forensic Edition)
+   Gatekeeper Mode: FORCED (Anti-Flat / Anti-Clean SaaS Card)
+   ========================================================================== */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Layered Ambient Background Tokens */
+  --bg-ambient-deep: #070a0f;
+  --bg-ambient-slate: #0b0f17;
+  --bg-glow-cyan: rgba(56, 189, 248, 0.12);
+  --bg-glow-emerald: rgba(52, 211, 153, 0.08);
+  --bg-glow-purple: rgba(168, 85, 247, 0.08);
+
+  /* Glass Surface Tokens */
+  --glass-background: rgba(15, 23, 42, 0.65);
+  --glass-background-strong: rgba(15, 23, 42, 0.85);
+  --glass-background-nested: rgba(255, 255, 255, 0.03);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.12);
+  --glass-border-highlight: 1px solid rgba(255, 255, 255, 0.22);
+  --glass-border-cyan: 1px solid rgba(56, 189, 248, 0.45);
+  --glass-border-emerald: 1px solid rgba(52, 211, 153, 0.45);
+
+  /* Optical Filter Tokens */
+  --glass-blur: blur(20px);
+  --glass-blur-heavy: blur(32px);
+  --glass-saturate: saturate(180%);
+
+  /* Shadow & Edge Reflection Tokens */
+  --glass-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  --glass-shadow-nested: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  --glass-glow-cyan: 0 0 24px rgba(56, 189, 248, 0.25);
+  --glass-glow-emerald: 0 0 24px rgba(52, 211, 153, 0.25);
+
+  /* Typography & Readability on Glass */
+  --glass-text-on-glass: #f8fafc;
+  --glass-text-muted-on-glass: #94a3b8;
+  --glass-text-dim: #64748b;
+
+  /* Accent Legal Tokens */
+  --accent-cyan: #38bdf8;
+  --accent-emerald: #34d399;
+  --accent-amber: #f59e0b;
+  --accent-danger: #f87171;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Base Body with Layered Ambient Lighting & Wallpaper */
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background-color: #070a0f;
+  background-image: 
+    radial-gradient(circle at 15% 15%, var(--bg-glow-cyan) 0%, transparent 45%),
+    radial-gradient(circle at 85% 20%, var(--bg-glow-purple) 0%, transparent 40%),
+    radial-gradient(circle at 50% 80%, var(--bg-glow-emerald) 0%, transparent 50%),
+    linear-gradient(180deg, rgba(7, 10, 15, 0.72) 0%, rgba(11, 15, 23, 0.82) 100%),
+    url('/BG.png');
+  background-size: auto, auto, auto, auto, cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  color: var(--glass-text-on-glass);
+  font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ==========================================================================
+   COMPONENT RULES: TRUE GLASSMORPHISM
+   ========================================================================== */
+
+/* 1. Header Translucent Sticky Glass */
+.glass-header {
+  background: rgba(11, 15, 23, 0.75);
+  backdrop-filter: var(--glass-blur) var(--glass-saturate);
+  -webkit-backdrop-filter: var(--glass-blur) var(--glass-saturate);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* 2. Primary Glass Card */
+.glass-card,
+.glass-panel {
+  background: var(--glass-background);
+  backdrop-filter: var(--glass-blur) var(--glass-saturate);
+  -webkit-backdrop-filter: var(--glass-blur) var(--glass-saturate);
+  border: var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: 12px;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 14px 34px -4px rgba(0, 0, 0, 0.7), 0 0 16px rgba(56, 189, 248, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+/* 3. Nested Glass-on-Glass (Auto-handling: drops opacity, disables re-blur, boosts rim highlight) */
+.glass-card .glass-card,
+.glass-panel .glass-panel,
+.glass-card .glass-nested {
+  background: var(--glass-background-nested);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  box-shadow: var(--glass-shadow-nested);
+}
+
+/* 4. Modal Backdrop & Dialog (Heavier glass presence) */
+.glass-modal-backdrop {
+  background: rgba(3, 7, 18, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.glass-modal {
+  background: var(--glass-background-strong);
+  backdrop-filter: var(--glass-blur-heavy) var(--glass-saturate);
+  -webkit-backdrop-filter: var(--glass-blur-heavy) var(--glass-saturate);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.30);
+  border-radius: 16px;
+}
+
+/* 5. Glass Input with Focus Ring */
+.glass-input {
+  min-height: 44px; /* Accessibility requirement: minimum 44px target */
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--glass-text-on-glass);
+  border-radius: 8px;
+  padding: 10px 14px;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.glass-input:focus {
+  border-color: var(--accent-emerald);
+  background: rgba(52, 211, 153, 0.08);
+  box-shadow: 0 0 14px rgba(52, 211, 153, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* 6. Glass Buttons */
+.glass-button {
+  min-height: 44px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.glass-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.glass-button-cyan {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #38bdf8;
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.glass-button-cyan:hover {
+  background: rgba(56, 189, 248, 0.28);
+  box-shadow: 0 6px 20px rgba(56, 189, 248, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* 7. Glass Badges & Chips */
+.glass-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: var(--glass-text-muted-on-glass);
+}
+
+.glass-badge-active {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.50);
+  color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+}
+
+/* 8. Fallback for Browsers without backdrop-filter */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-card, .glass-panel {
+    background: rgba(15, 23, 42, 0.94);
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  .glass-modal {
+    background: rgba(11, 15, 23, 0.98);
+  }
+  .glass-header {
+    background: rgba(11, 15, 23, 0.96);
+  }
+  .glass-card .glass-card, .glass-panel .glass-panel {
+    background: rgba(30, 41, 59, 0.90);
+  }
 }
