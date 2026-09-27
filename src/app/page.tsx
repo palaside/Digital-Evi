@@ -76,21 +76,29 @@ export default function MasterEvidenceWorkspace() {
   // Pure Zero State (SSOT Bi-Directional State)
   const [evidenceState, setEvidenceState] = useState<ForensicEvidenceState>(PURE_ZERO_STATE);
 
-  // Multi-File Batch Evidence Queue State
-  const [evidenceQueue, setEvidenceQueue] = useState<Array<{
+  // ---------------------------------------------------------------------------
+  // 2-PHASE FORENSIC STAGING BUFFER ARCHITECTURE (SSOT)
+  // Phase 1: Ingest & Stage (กี่รอบก็ได้ ยังไม่ยิง AI)
+  // Phase 2: Execute Unified Batch (Slips First -> Chats Next -> Cross-Match -> Net Loss)
+  // ---------------------------------------------------------------------------
+  const [stagedQueue, setStagedQueue] = useState<Array<{
     id: string;
     file: File;
     previewUrl: string;
-    status: "pending" | "processing" | "done" | "error";
+    category: "SLIP" | "CHAT";
+    status: "staged" | "processing" | "done" | "error";
     data?: SlipExtraction;
     meta?: ExtractionMetadata;
     error?: string;
+    isDuplicate?: boolean;
+    duplicateOfRef?: string;
   }>>([]);
   const [selectedItemIndex, setSelectedItemIndex] = useState<number>(0);
   const [batchProgress, setBatchProgress] = useState<{
     current: number;
     total: number;
     currentFileName: string;
+    phase: string;
   } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -98,25 +106,21 @@ export default function MasterEvidenceWorkspace() {
 
   // Select an evidence item from the queue to view on canvas & inspection panels
   const selectEvidenceItem = (index: number) => {
-    if (index < 0 || index >= evidenceQueue.length) return;
+    if (index < 0 || index >= stagedQueue.length) return;
     setSelectedItemIndex(index);
-    const item = evidenceQueue[index];
+    const item = stagedQueue[index];
     setPreviewImage(item.previewUrl);
+    setEvidenceMode(item.category);
     if (item.data) {
       setExtractedData(item.data);
-      if (item.data.transaction.amount && item.data.transaction.amount > 0) {
-        setEvidenceMode("SLIP");
-      } else {
-        setEvidenceMode("CHAT");
-      }
     }
     if (item.meta) {
       setMetadata(item.meta);
     }
   };
 
-  // Batch Multi-File Upload Handler
-  const handleMultipleFiles = async (files: FileList | File[]) => {
+  // Phase 1: Ingest files into Staging Buffer (Zero AI Cost, Append Anytime)
+  const stageIncomingFiles = (files: FileList | File[]) => {
     const rawList = Array.from(files);
     const imageFiles = rawList.filter((f) => f.type.startsWith("image/") || /\.(png|jpe?g|webp|bmp)$/i.test(f.name));
 
@@ -126,48 +130,109 @@ export default function MasterEvidenceWorkspace() {
     }
 
     setErrorMsg(null);
-    setLoading(true);
 
-    // Create queue items
-    const newItems = imageFiles.map((file) => ({
-      id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 7)}`,
-      file,
-      previewUrl: URL.createObjectURL(file),
-      status: "pending" as const,
-    }));
+    const newItems = imageFiles.map((file) => {
+      // Intelligent Pre-Classification: Check current mode or file name heuristic
+      const lowerName = file.name.toLowerCase();
+      const detectedCategory: "SLIP" | "CHAT" = lowerName.includes("slip") || lowerName.includes("สลิป") || lowerName.includes("โอน")
+        ? "SLIP"
+        : lowerName.includes("chat") || lowerName.includes("แชท") || lowerName.includes("line")
+        ? "CHAT"
+        : evidenceMode;
 
-    const startIndex = evidenceQueue.length;
-    let currentQueue = [...evidenceQueue, ...newItems];
-    setEvidenceQueue(currentQueue);
+      return {
+        id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 7)}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+        category: detectedCategory,
+        status: "staged" as const,
+      };
+    });
 
-    // Set first newly uploaded image as preview immediately
+    const updatedQueue = [...stagedQueue, ...newItems];
+    setStagedQueue(updatedQueue);
+
+    // If no preview is currently active, preview the first newly staged image
     if (!previewImage && newItems.length > 0) {
       setPreviewImage(newItems[0].previewUrl);
-      setSelectedItemIndex(startIndex);
+      setSelectedItemIndex(stagedQueue.length);
+      setEvidenceMode(newItems[0].category);
+    }
+  };
+
+  // Remove a single item from the staging buffer
+  const removeStagedItem = (id: string) => {
+    setStagedQueue((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      if (next.length === 0) {
+        setPreviewImage(null);
+        setExtractedData(null);
+      } else {
+        selectEvidenceItem(0);
+      }
+      return next;
+    });
+  };
+
+  // Clear entire staging buffer
+  const clearStagingBuffer = () => {
+    setStagedQueue([]);
+    setManifestList([]);
+    setEvidenceState(PURE_ZERO_STATE);
+    setPreviewImage(null);
+    setExtractedData(null);
+    setMetadata(null);
+    setCurrentStep(1);
+  };
+
+  // Phase 2: Unified Batch Execution (The Cross-Matching Law)
+  const executeUnifiedBatch = async () => {
+    if (stagedQueue.length === 0) {
+      setErrorMsg("ยังไม่มีไฟล์ในหน่วยความจำพักรอ (Staging Buffer)");
+      return;
     }
 
+    setLoading(true);
+    setErrorMsg(null);
+
+    let currentQueue = [...stagedQueue];
     let updatedManifest = [...manifestList];
 
-    // Process files sequentially to maintain transaction integrity and avoid RAM spikes
-    for (let i = 0; i < newItems.length; i++) {
-      const targetIdx = startIndex + i;
-      const targetFile = newItems[i].file;
+    // Identify Slips and Chats in queue
+    const slipIndices: number[] = [];
+    const chatIndices: number[] = [];
+
+    currentQueue.forEach((item, idx) => {
+      if (item.category === "SLIP") slipIndices.push(idx);
+      else chatIndices.push(idx);
+    });
+
+    const executionOrder = [...slipIndices, ...chatIndices];
+    const totalFiles = executionOrder.length;
+
+    // STEP 1: Process All Slips First (Fact Extraction: Amount, Timestamp, Bank, Ref)
+    // STEP 2: Process All Chats Next (Context & Timeline)
+    for (let step = 0; step < totalFiles; step++) {
+      const targetIdx = executionOrder[step];
+      const targetItem = currentQueue[targetIdx];
+      const isSlip = targetItem.category === "SLIP";
 
       setBatchProgress({
-        current: i + 1,
-        total: newItems.length,
-        currentFileName: targetFile.name,
+        current: step + 1,
+        total: totalFiles,
+        currentFileName: targetItem.file.name,
+        phase: isSlip ? "สกัดข้อมูลสลิป (Slips First)" : "วิเคราะห์บริบทแชท (Chats Context)",
       });
 
       // Mark processing
       currentQueue = currentQueue.map((item, idx) =>
         idx === targetIdx ? { ...item, status: "processing" as const } : item
       );
-      setEvidenceQueue(currentQueue);
+      setStagedQueue(currentQueue);
 
       try {
         const formData = new FormData();
-        formData.append("file", targetFile);
+        formData.append("file", targetItem.file);
 
         const response = await fetch("/api/slips/extract", {
           method: "POST",
@@ -183,17 +248,43 @@ export default function MasterEvidenceWorkspace() {
         const slip: SlipExtraction = result.data;
         const meta: ExtractionMetadata = result.metadata;
 
+        // Check for duplicates across previously extracted slips
+        let isDuplicate = false;
+        let duplicateOfRef: string | undefined;
+
+        if (isSlip && slip.transaction.amount && slip.transaction.amount > 0) {
+          const currentRef = slip.transaction.reference_no;
+          const currentAmt = slip.transaction.amount;
+          const currentDate = slip.transaction.date;
+
+          const existingMatch = currentQueue.find(
+            (other, oIdx) =>
+              oIdx !== targetIdx &&
+              other.status === "done" &&
+              other.data &&
+              ((currentRef && other.data.transaction.reference_no === currentRef) ||
+                (other.data.transaction.amount === currentAmt && other.data.transaction.date === currentDate))
+          );
+
+          if (existingMatch) {
+            isDuplicate = true;
+            duplicateOfRef = existingMatch.data?.transaction.reference_no || existingMatch.file.name;
+          }
+        }
+
         // Update item in queue
         currentQueue = currentQueue.map((item, idx) =>
-          idx === targetIdx ? { ...item, status: "done" as const, data: slip, meta } : item
+          idx === targetIdx
+            ? { ...item, status: "done" as const, data: slip, meta, isDuplicate, duplicateOfRef }
+            : item
         );
-        setEvidenceQueue(currentQueue);
+        setStagedQueue(currentQueue);
 
         // Append to Chain of Custody Hash Manifest
         const newManifestEntry: HashManifestEntry = {
           no: updatedManifest.length + 1,
           file_name: meta.file_name,
-          file_type: slip.transaction.amount ? "SLIP" : "CHAT",
+          file_type: isSlip ? "SLIP" : "CHAT",
           size_bytes: meta.size_bytes,
           sha256: meta.sha256,
           intake_timestamp: meta.extracted_at,
@@ -201,43 +292,44 @@ export default function MasterEvidenceWorkspace() {
         updatedManifest = [...updatedManifest, newManifestEntry];
         setManifestList(updatedManifest);
 
-        // If this is the currently selected item or the first processed item, sync active inspection view
-        if (targetIdx === startIndex) {
+        // Update preview for the first processed item
+        if (step === 0) {
           setExtractedData(slip);
           setMetadata(meta);
-          setPreviewImage(newItems[i].previewUrl);
+          setPreviewImage(targetItem.previewUrl);
           setSelectedItemIndex(targetIdx);
-          if (slip.transaction.amount && slip.transaction.amount > 0) {
-            setEvidenceMode("SLIP");
-          } else {
-            setEvidenceMode("CHAT");
-          }
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการประมวลผล";
         currentQueue = currentQueue.map((item, idx) =>
           idx === targetIdx ? { ...item, status: "error" as const, error: msg } : item
         );
-        setEvidenceQueue(currentQueue);
+        setStagedQueue(currentQueue);
       }
     }
 
-    // Re-aggregate Global Evidence State across all successfully processed items
-    let totalLoss = 0;
-    let slipCount = 0;
+    // STEP 3 & 4: Deduplication & Reconcile Net Loss
+    let totalNetLoss = 0;
+    let validSlipCount = 0;
+    let duplicateCount = 0;
     let chatCount = 0;
     let poiLoss = 0;
     let lastPoiName: string | null = null;
 
     currentQueue.forEach((item) => {
       if (item.status === "done" && item.data) {
-        const amt = item.data.transaction.amount || 0;
-        if (amt > 0) {
-          slipCount += 1;
-          totalLoss += amt;
-          if (item.data.receiver.name) {
-            lastPoiName = item.data.receiver.name;
-            poiLoss += amt;
+        if (item.category === "SLIP") {
+          if (item.isDuplicate) {
+            duplicateCount += 1;
+          } else {
+            const amt = item.data.transaction.amount || 0;
+            totalNetLoss += amt;
+            validSlipCount += 1;
+
+            if (item.data.receiver.name) {
+              lastPoiName = item.data.receiver.name;
+              poiLoss += amt;
+            }
           }
         } else {
           chatCount += 1;
@@ -245,28 +337,28 @@ export default function MasterEvidenceWorkspace() {
       }
     });
 
-    const pairsCount = Math.min(slipCount, chatCount > 0 ? chatCount : slipCount);
+    const corroboratedPairs = Math.min(validSlipCount, chatCount > 0 ? chatCount : validSlipCount);
 
     setEvidenceState({
-      totalNetLoss: totalLoss,
-      slipCount,
+      totalNetLoss,
+      slipCount: validSlipCount,
       chatPageCount: chatCount,
       poiName: lastPoiName || targetName || null,
-      poiLossSum: poiLoss > 0 ? poiLoss : totalLoss,
-      corroboratedPairsCount: pairsCount,
-      duplicateCount: 0,
+      poiLossSum: poiLoss > 0 ? poiLoss : totalNetLoss,
+      corroboratedPairsCount: corroboratedPairs,
+      duplicateCount,
       processedAt: new Date().toLocaleString("th-TH"),
     });
 
     setBatchProgress(null);
     setLoading(false);
-    setCurrentStep(2); // Step 2: ตรวจสอบและประมวลผล
+    setCurrentStep(2); // Step 2: ตรวจสอบและสืบพยาน
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleMultipleFiles(e.dataTransfer.files);
+      stageIncomingFiles(e.dataTransfer.files);
     }
   };
 
@@ -341,7 +433,7 @@ export default function MasterEvidenceWorkspace() {
       ctx.fillText(pageLabel, contentRight - pageValW - pageLblW, ribbonTop + 30);
 
       // Row 2 (Y = ribbonTop + 62): CORROBORATED (Left) | Timestamp (Right)
-      const activeItem = evidenceQueue[selectedItemIndex];
+      const activeItem = stagedQueue[selectedItemIndex];
       const corroborationText = resolveHeaderCorroborated({
         type: pageType,
         itemIndex: selectedItemIndex + 1,
@@ -701,17 +793,17 @@ export default function MasterEvidenceWorkspace() {
           </div>
 
           <div className="panel-scroll-body thai-clearance-stack pr-1">
-            {/* Hidden File Input (Multiple Files Supported) */}
+            {/* Hidden File Input (Staging Buffer Intake) */}
             <input
               type="file"
               ref={fileInputRef}
               multiple
-              onChange={(e) => e.target.files && handleMultipleFiles(e.target.files)}
+              onChange={(e) => e.target.files && stageIncomingFiles(e.target.files)}
               accept="image/*"
               className="hidden"
             />
 
-            {/* Drag-and-Drop Dropzone (Multi-Image Ready) */}
+            {/* Drag-and-Drop Dropzone (Staging Buffer Ingestion) */}
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDrop}
@@ -726,7 +818,7 @@ export default function MasterEvidenceWorkspace() {
                 <div className="flex flex-col items-center py-2 w-full">
                   <div className="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin mb-2"></div>
                   <p className="typo-label font-bold text-amber-300">
-                    กำลังประมวลผล {batchProgress.current} จาก {batchProgress.total} ไฟล์...
+                    {batchProgress.phase} ({batchProgress.current}/{batchProgress.total})
                   </p>
                   <p className="text-[11px] text-slate-300 font-mono mt-0.5 truncate max-w-[280px]">
                     📄 {batchProgress.currentFileName}
@@ -734,38 +826,30 @@ export default function MasterEvidenceWorkspace() {
                   {/* Progress bar */}
                   <div className="w-full bg-black/40 h-2 rounded-full overflow-hidden mt-3 border border-white/10">
                     <div
-                      className="bg-gradient-to-r from-sky-400 to-emerald-400 h-full transition-all duration-300"
+                      className="bg-gradient-to-r from-sky-400 via-amber-400 to-emerald-400 h-full transition-all duration-300"
                       style={{
                         width: `${Math.round((batchProgress.current / batchProgress.total) * 100)}%`,
                       }}
                     />
                   </div>
                 </div>
-              ) : loading ? (
-                <div className="flex flex-col items-center py-3">
-                  <div className="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin mb-2"></div>
-                  <p className="typo-label font-bold text-amber-300">
-                    AI กำลังถอดรหัสพยานหลักฐาน...
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">วิเคราะห์พิกเซล + ตรวจ Zod Schema</p>
-                </div>
               ) : (
                 <>
-                  <span className="text-3xl mb-1.5 group-hover:scale-110 transition-transform">📂</span>
+                  <span className="text-3xl mb-1.5 group-hover:scale-110 transition-transform">📥</span>
                   <p className="typo-label font-semibold text-slate-100">
-                    ลากไฟล์ภาพแชท / สลิป มาวางที่นี่
+                    ลากไฟล์ภาพแชท / สลิป มาหยอดพักไว้ที่นี่
                   </p>
-                  <p className="text-xs text-emerald-400 font-medium mt-0.5">
-                    ✨ รองรับการเลือกและลากอัปโหลดทีละหลายรูปพร้อมกัน
+                  <p className="text-xs text-sky-400 font-medium mt-0.5">
+                    📦 หยอดไฟล์เพิ่มกี่รอบก็ได้ (Staging Buffer พักรอข้อมูล)
                   </p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    PNG, JPG, WEBP (สกัด AI + แฮช SHA-256 รายใบ)
+                    PNG, JPG, WEBP (พักรอให้ครบก่อนกดรันทีเดียว)
                   </p>
                   <button
                     type="button"
                     className="btn-proportional-compact mt-3 rounded-lg bg-white/5 border border-white/15 text-sky-400 hover:bg-white/10 font-medium"
                   >
-                    + เลือกไฟล์จากเครื่อง (หลายรูปได้)
+                    + เลือกไฟล์เพิ่มลงในบัฟเฟอร์
                   </button>
                 </>
               )}
@@ -777,71 +861,125 @@ export default function MasterEvidenceWorkspace() {
               </div>
             )}
 
-            {/* Evidence Queue Gallery (When multiple files are uploaded) */}
-            {evidenceQueue.length > 0 && (
-              <div className="glass-nested p-3 rounded-xl border border-white/10 flex flex-col gap-2">
+            {/* -----------------------------------------------------------------
+                PHASE 1: STAGING BUFFER CONTROL CARD (หน่วยความจำพักรอข้อมูล)
+                ----------------------------------------------------------------- */}
+            {stagedQueue.length > 0 && (
+              <div className="glass-nested p-3.5 rounded-xl border border-sky-400/30 flex flex-col gap-3 shadow-lg bg-sky-950/20">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-200">
-                    คลังหลักฐานในคดี ({evidenceQueue.length} ไฟล์)
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">📦</span>
+                    <div>
+                      <span className="text-xs font-bold text-slate-100">
+                        หน่วยความจำพักรอ (Staging Buffer)
+                      </span>
+                      <div className="text-[11px] text-slate-400 font-mono mt-0.5 flex items-center gap-2">
+                        <span className="text-emerald-400">
+                          สลิป {stagedQueue.filter((i) => i.category === "SLIP").length} ใบ
+                        </span>
+                        <span>•</span>
+                        <span className="text-sky-400">
+                          แชท {stagedQueue.filter((i) => i.category === "CHAT").length} หน้า
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEvidenceQueue([]);
-                      setManifestList([]);
-                      setEvidenceState(PURE_ZERO_STATE);
-                      setPreviewImage(null);
-                      setExtractedData(null);
-                    }}
-                    className="text-[10px] text-red-400 hover:text-red-300 font-medium"
+                    onClick={clearStagingBuffer}
+                    className="text-[11px] text-red-400 hover:text-red-300 font-medium"
                   >
-                    ล้างทั้งหมด
+                    ล้างคิว
                   </button>
                 </div>
-                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                  {evidenceQueue.map((item, idx) => (
+
+                {/* PHASE 2 EXECUTE BUTTON */}
+                <button
+                  onClick={executeUnifiedBatch}
+                  disabled={loading}
+                  className={`w-full py-2.5 px-4 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md ${
+                    loading
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-400/40 cursor-wait"
+                      : "bg-gradient-to-r from-emerald-600 to-sky-600 text-white hover:from-emerald-500 hover:to-sky-500 hover:scale-[1.02] border border-white/20 active:scale-[0.98]"
+                  }`}
+                >
+                  {loading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-amber-300 border-t-transparent rounded-full animate-spin"></div>
+                      <span>กำลังประมวลผลแบบ Cross-Matching...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>⚡ เริ่มประมวลผลพยานหลักฐาน ({stagedQueue.length} ไฟล์)</span>
+                    </>
+                  )}
+                </button>
+                <p className="text-[10px] text-slate-400 text-center leading-tight">
+                  ระบบจะสกัดสลิป Fact → วิเคราะห์แชท → Match คู่ขนาน → ตัดยอดซ้ำ อัตโนมัติ
+                </p>
+
+                {/* Staged Items List */}
+                <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1 border-t border-white/10 pt-2">
+                  {stagedQueue.map((item, idx) => (
                     <div
                       key={item.id}
                       onClick={() => selectEvidenceItem(idx)}
-                      className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-all border ${
+                      className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all border ${
                         selectedItemIndex === idx
                           ? "bg-sky-500/20 border-sky-400/60 shadow-sm"
                           : "bg-black/20 border-white/5 hover:bg-white/5"
                       }`}
                     >
-                      <img
-                        src={item.previewUrl}
-                        alt="thumb"
-                        className="w-10 h-10 object-cover rounded border border-white/10 shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium text-slate-200 truncate">
-                          {idx + 1}. {item.file.name}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          {item.status === "processing" ? (
-                            <span className="text-[10px] text-amber-400 font-mono animate-pulse">
-                              🔄 กำลังวิเคราะห์...
-                            </span>
-                          ) : item.status === "pending" ? (
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              ⏳ รอคิว
-                            </span>
-                          ) : item.status === "error" ? (
-                            <span className="text-[10px] text-red-400 font-mono">
-                              ⚠️ ผิดพลาด
-                            </span>
-                          ) : item.data?.transaction.amount && item.data.transaction.amount > 0 ? (
-                            <span className="text-[10px] text-emerald-400 font-mono font-bold">
-                              🧾 ฿{item.data.transaction.amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-sky-400 font-mono">
-                              📷 หน้าแชท
-                            </span>
-                          )}
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <img
+                          src={item.previewUrl}
+                          alt="thumb"
+                          className="w-9 h-9 object-cover rounded border border-white/10 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11px] font-medium text-slate-200 truncate">
+                            {idx + 1}. {item.file.name}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {item.status === "processing" ? (
+                              <span className="text-[10px] text-amber-400 font-mono animate-pulse">
+                                🔄 กำลังวิเคราะห์...
+                              </span>
+                            ) : item.status === "staged" ? (
+                              <span className="text-[10px] text-sky-300 font-mono">
+                                📦 {item.category === "SLIP" ? "สลิป (รอรัน)" : "แชท (รอรัน)"}
+                              </span>
+                            ) : item.status === "error" ? (
+                              <span className="text-[10px] text-red-400 font-mono">
+                                ⚠️ ผิดพลาด
+                              </span>
+                            ) : item.isDuplicate ? (
+                              <span className="text-[10px] text-amber-400 font-mono font-bold">
+                                ⚠️ สลิปซ้ำ (ตัดยอด NET)
+                              </span>
+                            ) : item.data?.transaction.amount && item.data.transaction.amount > 0 ? (
+                              <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                                🧾 ฿{item.data.transaction.amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-sky-400 font-mono">
+                                📷 หน้าแชท
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
+
+                      {/* Remove item button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeStagedItem(item.id);
+                        }}
+                        className="text-slate-500 hover:text-red-400 text-xs px-1.5 py-0.5 ml-1 rounded hover:bg-white/5"
+                        title="นำออกจากคิว"
+                      >
+                        ✕
+                      </button>
                     </div>
                   ))}
                 </div>
