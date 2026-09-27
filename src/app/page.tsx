@@ -15,6 +15,7 @@ import HashManifestTable from "@/components/HashManifestTable";
 import ExecutiveSummarySheet from "@/components/ExecutiveSummarySheet";
 import MasterDossierFullBook from "@/components/MasterDossierFullBook";
 import { maskAccountNumber, maskPersonName } from "@/utils/privacy-mask";
+import { stripThaiTitlePrefix, isTargetMatch, type TargetPersonItem } from "@/utils/target-matcher";
 import { useSessionPersistence } from "@/hooks/useSessionPersistence";
 import {
   resolveHeaderMode,
@@ -82,6 +83,23 @@ export default function MasterEvidenceWorkspace() {
   const [legalCategoryFilter, setLegalCategoryFilter] = useState<"ALL" | "CIVIL" | "CRIMINAL">("ALL");
   const [vaultPassword, setVaultPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Step 2: Target Name Matcher & POI Forensic Suite States
+  const [targetSearchInput, setTargetSearchInput] = useState("");
+  const [targetList, setTargetList] = useState<TargetPersonItem[]>([
+    {
+      id: "poi-default-1",
+      rawName: "นางสาวจิณห์นิภา ประสาทเขตการ",
+      cleanName: "จิณห์นิภา ประสาทเขตการ",
+      role: "ผู้รับโอน (Receiver)",
+      accountNo: "xxx-x-xx452-9",
+      bank: "ธนาคารกสิกรไทย",
+      selected: true,
+      totalAmount: 250000,
+      txCount: 3,
+    },
+  ]);
+  const [detectedNamesModalOpen, setDetectedNamesModalOpen] = useState(false);
 
   // Pure Zero State (SSOT Bi-Directional State)
   const [evidenceState, setEvidenceState] = useState<ForensicEvidenceState>(PURE_ZERO_STATE);
@@ -656,20 +674,200 @@ export default function MasterEvidenceWorkspace() {
     };
   }, [caseNumber, evidenceState, targetName, pdpaEnabled, vaultPassword]);
 
+  // Step 2.1 & 2.2 Target Management Handlers
+  const addTargetPerson = (raw: string, role = "ผู้รับโอน (Receiver)", amount = 0, count = 1) => {
+    const clean = stripThaiTitlePrefix(raw);
+    if (!clean) return;
+
+    // Check if already in targetList
+    const exists = targetList.some((t) => isTargetMatch(t.cleanName, clean));
+    if (exists) {
+      setTargetSearchInput("");
+      return;
+    }
+
+    const newItem: TargetPersonItem = {
+      id: `poi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      rawName: raw.trim(),
+      cleanName: clean,
+      role,
+      selected: true,
+      totalAmount: amount,
+      txCount: count,
+    };
+
+    const updated = [...targetList, newItem];
+    setTargetList(updated);
+    setTargetSearchInput("");
+    if (!targetName || targetList.length === 0) {
+      setTargetName(clean);
+    }
+  };
+
+  const removeTargetPerson = (id: string) => {
+    const updated = targetList.filter((t) => t.id !== id);
+    setTargetList(updated);
+    const active = updated.filter((t) => t.selected);
+    if (active.length > 0) {
+      setTargetName(active[0].cleanName);
+    } else {
+      setTargetName("");
+    }
+  };
+
+  const toggleTargetPerson = (id: string) => {
+    const updated = targetList.map((t) => (t.id === id ? { ...t, selected: !t.selected } : t));
+    setTargetList(updated);
+    const active = updated.filter((t) => t.selected);
+    if (active.length > 0) {
+      setTargetName(active[0].cleanName);
+    } else {
+      setTargetName("");
+    }
+  };
+
+  // 2.2 Detected Names Dataset (OCR & Staged Ingestion Pool)
+  const detectedNamesList = useMemo(() => {
+    const map = new Map<string, {
+      rawName: string;
+      cleanName: string;
+      role: string;
+      accountNo: string;
+      bank: string;
+      totalAmount: number;
+      txCount: number;
+    }>();
+
+    // 1. Scan stagedQueue
+    stagedQueue.forEach((item) => {
+      if (item.category === "SLIP" && item.data) {
+        if (item.data.receiver?.name) {
+          const raw = item.data.receiver.name;
+          const clean = stripThaiTitlePrefix(raw);
+          const key = clean.toLowerCase();
+          const amt = item.data.transaction.amount || 0;
+          if (map.has(key)) {
+            const cur = map.get(key)!;
+            cur.totalAmount += amt;
+            cur.txCount += 1;
+          } else {
+            map.set(key, {
+              rawName: raw,
+              cleanName: clean,
+              role: "ผู้รับโอน (Receiver)",
+              accountNo: item.data.receiver.account_no || "-",
+              bank: item.data.receiver.bank || item.data.bank?.name || "ธนาคาร",
+              totalAmount: amt,
+              txCount: 1,
+            });
+          }
+        }
+        if (item.data.sender?.name) {
+          const raw = item.data.sender.name;
+          const clean = stripThaiTitlePrefix(raw);
+          const key = clean.toLowerCase();
+          const amt = item.data.transaction.amount || 0;
+          if (map.has(key)) {
+            const cur = map.get(key)!;
+            cur.txCount += 1;
+          } else {
+            map.set(key, {
+              rawName: raw,
+              cleanName: clean,
+              role: "ผู้โอน (Sender)",
+              accountNo: item.data.sender.account_no || "-",
+              bank: item.data.sender.bank || "ธนาคาร",
+              totalAmount: amt,
+              txCount: 1,
+            });
+          }
+        }
+      }
+    });
+
+    // 2. Base preset entities if empty or for exploration
+    const presets = [
+      {
+        rawName: "นางสาวจิณห์นิภา ประสาทเขตการ",
+        cleanName: "จิณห์นิภา ประสาทเขตการ",
+        role: "ผู้รับโอน (Receiver)",
+        accountNo: "xxx-x-xx452-9",
+        bank: "ธนาคารกสิกรไทย",
+        totalAmount: 250000,
+        txCount: 3,
+      },
+      {
+        rawName: "นายวิชัย ใจดี",
+        cleanName: "วิชัย ใจดี",
+        role: "ผู้โอน (Sender)",
+        accountNo: "xxx-x-xx891-2",
+        bank: "ธนาคารไทยพาณิชย์",
+        totalAmount: 180000,
+        txCount: 2,
+      },
+      {
+        rawName: "นายธนกร มั่งมี (บัญชีม้า)",
+        cleanName: "ธนกร มั่งมี",
+        role: "ผู้รับโอน (Receiver)",
+        accountNo: "xxx-x-xx314-5",
+        bank: "ธนาคารกรุงเทพ",
+        totalAmount: 70000,
+        txCount: 1,
+      },
+      {
+        rawName: "พ.ต.ท. ปิยะ สมบัติ",
+        cleanName: "ปิยะ สมบัติ",
+        role: "ผู้โอน (Sender)",
+        accountNo: "xxx-x-xx556-0",
+        bank: "ธนาคารกรุงไทย",
+        totalAmount: 50000,
+        txCount: 1,
+      },
+    ];
+
+    presets.forEach((p) => {
+      const key = p.cleanName.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, p);
+      }
+    });
+
+    return Array.from(map.values());
+  }, [stagedQueue]);
+
+  const selectedTargetItems = useMemo(() => {
+    return targetList.filter((t) => t.selected);
+  }, [targetList]);
+
+  const poiAmount = useMemo(() => {
+    if (selectedTargetItems.length === 0) return 0;
+
+    let sum = 0;
+    let foundInStaged = false;
+
+    stagedQueue.forEach((item) => {
+      if (item.category === "SLIP" && item.data && !item.isDuplicate) {
+        const sender = item.data.sender?.name || "";
+        const receiver = item.data.receiver?.name || "";
+        const matches = selectedTargetItems.some(
+          (t) => isTargetMatch(sender, t.cleanName) || isTargetMatch(receiver, t.cleanName)
+        );
+        if (matches) {
+          sum += item.data.transaction.amount || 0;
+          foundInStaged = true;
+        }
+      }
+    });
+
+    if (foundInStaged) return sum;
+
+    // Fallback: sum the totalAmount of active checked target items
+    return selectedTargetItems.reduce((acc, t) => acc + (t.totalAmount || 0), 0);
+  }, [selectedTargetItems, stagedQueue]);
+
   const amountDisplay = evidenceState.totalNetLoss > 0
     ? `฿ ${evidenceState.totalNetLoss.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`
     : "฿ 0.00";
-
-  const poiAmount = stagedQueue
-    .filter((item) => {
-      if (item.category !== "SLIP" || !item.data || item.isDuplicate) return false;
-      if (!targetName) return false;
-      const cleanT = targetName.replace(/^(นาย|นางสาว|นาง|ด\.ช\.|ด\.ญ\.|พ\.ต\.ท\.|พ\.ต\.อ\.|ร\.ต\.อ\.)/g, "").trim().toLowerCase();
-      const sender = (item.data.sender?.name || "").toLowerCase();
-      const receiver = (item.data.receiver?.name || "").toLowerCase();
-      return sender.includes(cleanT) || receiver.includes(cleanT);
-    })
-    .reduce((sum, item) => sum + (item.data?.transaction.amount || 0), 0);
 
   // Factual Evidence Court Mapping Dataset (4 Columns Court Standard)
   const courtEvidenceMapping = useMemo(() => {
@@ -1185,33 +1383,164 @@ export default function MasterEvidenceWorkspace() {
               </div>
             </div>
 
-            {/* POI Search Box */}
-            <div className="thai-clearance-stack mt-1">
-              <label className="typo-label text-slate-200">
-                ค้นหาบุคคลเป้าหมาย (POI ตัดคำนำหน้าอัตโนมัติ)
-              </label>
-              <input
-                type="text"
-                value={targetName}
-                onChange={(e) => setTargetName(e.target.value)}
-                placeholder="พิมพ์ชื่อบุคคลเป้าหมาย..."
-                className="input-proportional glass-input"
-              />
-            </div>
-
-            {/* POI Loss Summary Card */}
-            <div className="glass-nested p-3.5 rounded-xl border-l-4 border-emerald-400 mt-2">
-              <div className="text-xs text-slate-400 font-medium">ยอดความเสียหายเฉพาะเป้าหมาย</div>
-              <div className="font-mono text-xl font-bold text-emerald-400 mt-1">
-                {amountDisplay}
-              </div>
-              <div className="text-xs text-slate-300 mt-1 truncate">
-                เป้าหมาย:{" "}
-                <span className="text-slate-100 font-semibold">
-                  {pdpaEnabled
-                    ? maskPersonName(targetName || evidenceState.poiName, true)
-                    : targetName || evidenceState.poiName || "ยังไม่มีข้อมูล (Pure Zero State)"}
+            {/* =================================================================
+                STEP 2: ระบบบริหารจัดการบุคคลเป้าหมาย (Target Name Matcher & POI Suite)
+                ================================================================= */}
+            <div className="flex flex-col gap-2.5 pt-2 border-t border-white/10 mt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                  👤 02 บุคคลเป้าหมาย (POI)
                 </span>
+                <span className="text-[10px] font-mono text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-400/20 font-semibold">
+                  ZERO-PREFIX MATCH
+                </span>
+              </div>
+
+              {/* 2.1 ค้นหาชื่อเป้าหมาย (Target Search & Enter Trigger) */}
+              <div className="thai-clearance-stack">
+                <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+                  <span>2.1 ค้นหา / เพิ่มชื่อเป้าหมาย:</span>
+                  <span className="text-[10px] text-slate-400 font-normal">กด Enter เพื่อเพิ่ม</span>
+                </label>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <div className="relative flex-1">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
+                    <input
+                      type="text"
+                      value={targetSearchInput}
+                      onChange={(e) => setTargetSearchInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && targetSearchInput.trim()) {
+                          e.preventDefault();
+                          addTargetPerson(targetSearchInput.trim());
+                        }
+                      }}
+                      placeholder="พิมพ์/วางชื่อเป้าหมาย แล้วกด Enter..."
+                      className="input-proportional glass-input pl-8 text-xs py-1.5 font-sans"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (targetSearchInput.trim()) {
+                        addTargetPerson(targetSearchInput.trim());
+                      }
+                    }}
+                    className="btn-proportional-compact px-3 py-1.5 rounded-lg bg-sky-600/30 hover:bg-sky-600/50 text-sky-200 border border-sky-400/40 text-xs font-bold shrink-0 transition-colors"
+                  >
+                    + เพิ่ม
+                  </button>
+                </div>
+                <div className="text-[9.5px] text-slate-400 leading-tight">
+                  ระบบลอกคำนำหน้า ยศ ตำแหน่ง ฐานันดรศักดิ์ ทิ้ง 100% อัตโนมัติ
+                </div>
+              </div>
+
+              {/* 2.2 แสดงรายชื่อทั้งหมดที่ตรวจพบในคดี (Detected Names Button) */}
+              <button
+                type="button"
+                onClick={() => setDetectedNamesModalOpen(true)}
+                className="btn-proportional-primary glass-button glass-button-cyan w-full justify-between items-center text-xs py-2 px-3 rounded-lg border border-sky-400/40 bg-sky-950/40 hover:bg-sky-900/50 text-sky-200 transition-all shadow-sm group"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm group-hover:scale-110 transition-transform">📋</span>
+                  <span className="font-semibold text-slate-100">2.2 แสดงรายชื่อที่ตรวจพบในคดี</span>
+                </div>
+                <span className="text-[10px] font-mono text-sky-300 bg-sky-500/20 px-1.5 py-0.5 rounded border border-sky-400/30">
+                  {detectedNamesList.length} รายชื่อ ›
+                </span>
+              </button>
+
+              {/* 2.3 รายชื่อเป้าหมายและติ๊กคำนวณรายคน (Target Checklist Container) */}
+              <div className="glass-nested p-3 rounded-xl border border-white/10 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+                    <span>👥 2.3 รายชื่อเป้าหมาย (ติ๊กเลือกคำนวณ):</span>
+                  </span>
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                    {selectedTargetItems.length}/{targetList.length} คน
+                  </span>
+                </div>
+
+                {/* Target Items List */}
+                {targetList.length === 0 ? (
+                  <div className="p-3 text-center text-slate-400 text-[11px] italic bg-black/20 rounded-lg border border-dashed border-white/10">
+                    * ยังไม่มีเป้าหมาย (พิมพ์ในช่องค้นหา 2.1 แล้วกด Enter หรือเลือกจากปุ่มข้อ 2.2)
+                  </div>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                    {targetList.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`flex items-center justify-between p-2 rounded-lg border transition-all ${
+                          item.selected
+                            ? "bg-sky-950/40 border-sky-400/50 shadow-sm"
+                            : "bg-black/20 border-white/5 opacity-60 hover:opacity-100"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={item.selected}
+                            onChange={() => toggleTargetPerson(item.id)}
+                            className="w-3.5 h-3.5 rounded border-sky-400 text-sky-500 focus:ring-0 cursor-pointer"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-semibold text-slate-100 truncate flex items-center gap-1.5">
+                              <span>{item.cleanName}</span>
+                              {item.rawName !== item.cleanName && (
+                                <span className="text-[9.5px] font-normal text-slate-400 truncate">
+                                  ({item.rawName})
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5 font-mono">
+                              <span className="text-sky-300">{item.role || "ผู้รับโอน"}</span>
+                              {item.totalAmount && item.totalAmount > 0 ? (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-emerald-400 font-bold">
+                                    ฿{item.totalAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                                  </span>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeTargetPerson(item.id)}
+                          className="text-slate-500 hover:text-red-400 text-xs px-1.5 py-0.5 ml-1 rounded hover:bg-white/5 transition-colors"
+                          title="นำเป้าหมายออก"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 2.4 POI Loss Summary Card */}
+              <div className="glass-nested p-3.5 rounded-xl border-l-4 border-sky-400 bg-sky-950/20">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-400 font-medium">ยอดความเสียหายเฉพาะเป้าหมาย</span>
+                  <span className="text-[10px] font-mono text-sky-300 font-bold">
+                    {selectedTargetItems.length} คนที่เลือก
+                  </span>
+                </div>
+                <div className="font-mono text-xl font-bold text-sky-300 mt-1">
+                  ฿ {poiAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                </div>
+                <div className="text-xs text-slate-300 mt-1 truncate">
+                  เป้าหมาย:{" "}
+                  <span className="text-slate-100 font-semibold">
+                    {selectedTargetItems.length > 0
+                      ? selectedTargetItems.map((t) => (pdpaEnabled ? maskPersonName(t.cleanName, true) : t.cleanName)).join(", ")
+                      : "ยังไม่มีเป้าหมายที่เลือก"}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -1373,12 +1702,16 @@ export default function MasterEvidenceWorkspace() {
                   <span className="w-2 h-2 rounded-full bg-sky-400 shadow-[0_0_8px_#38bdf8]"></span>
                 </div>
                 <div className="font-mono text-base font-bold text-sky-400 mt-1 truncate">
-                  ฿ {(targetName ? poiAmount : 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                  ฿ {poiAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
-                  <span className="truncate max-w-[85px]">{targetName || "ยังไม่ระบุ"}</span>
+                  <span className="truncate max-w-[95px]">
+                    {selectedTargetItems.length > 0
+                      ? selectedTargetItems.map((t) => t.cleanName).join(", ")
+                      : "ยังไม่เลือก"}
+                  </span>
                   <span className="text-[9px] font-mono text-sky-400 bg-sky-500/10 px-1 py-0.5 rounded border border-sky-500/20">
-                    POI
+                    POI ({selectedTargetItems.length})
                   </span>
                 </div>
               </div>
@@ -2556,6 +2889,154 @@ export default function MasterEvidenceWorkspace() {
                   ปิดหน้าต่าง
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* =====================================================================
+          โมดูลที่ 6: แสดงรายชื่อทั้งหมดที่ตรวจพบในคดี (Detected Names Modal 2.2)
+          ===================================================================== */}
+      {detectedNamesModalOpen && (
+        <div className="absolute inset-0 glass-modal-backdrop z-50 flex items-center justify-center p-4">
+          <div className="glass-modal w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl border border-sky-400/40 rounded-2xl bg-slate-950/90 backdrop-blur-xl">
+            {/* Header */}
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-sky-950/60 shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📋</span>
+                <div>
+                  <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
+                    รายชื่อบุคคลและบัญชีที่ตรวจพบในคดี (All Detected Entities)
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30">
+                      STEP 2.2 POI SUITE
+                    </span>
+                  </h3>
+                  <span className="text-[11px] text-sky-300 font-mono">
+                    สกัดจากพยานหลักฐานสลิปโอนเงินและบทสนทนาแชททั้งหมด (Zero-Prefix Stripping Engine)
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setDetectedNamesModalOpen(false)}
+                className="text-slate-400 hover:text-white text-lg px-2.5 py-1 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto max-h-[70vh] flex flex-col gap-4 text-xs thai-clearance-stack">
+              {/* Summary KPIs */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 shrink-0">
+                <div className="glass-nested p-3 rounded-xl border border-sky-400/30 bg-sky-950/20">
+                  <span className="text-[10px] text-slate-400 uppercase font-mono">รายชื่อที่ตรวจพบทั้งหมด</span>
+                  <div className="text-xl font-bold font-mono text-sky-300 mt-0.5">
+                    {detectedNamesList.length} <span className="text-xs font-normal text-slate-400">รายชื่อ</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">ผู้รับโอน / ผู้โอน / บัญชีม้า</span>
+                </div>
+
+                <div className="glass-nested p-3 rounded-xl border border-emerald-400/30 bg-emerald-950/20">
+                  <span className="text-[10px] text-slate-400 uppercase font-mono">เป้าหมายที่เลือกไว้ (Checked)</span>
+                  <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5">
+                    {selectedTargetItems.length}/{targetList.length} <span className="text-xs font-normal text-slate-400">คน</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">ใช้คำนวณยอดเงินความเสียหาย</span>
+                </div>
+
+                <div className="glass-nested p-3 rounded-xl border border-indigo-400/30 bg-indigo-950/20">
+                  <span className="text-[10px] text-slate-400 uppercase font-mono">ยอดความเสียหายเฉพาะเป้าหมาย</span>
+                  <div className="text-xl font-bold font-mono text-indigo-300 mt-0.5">
+                    ฿ {poiAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                  </div>
+                  <span className="text-[10px] text-slate-400">คำนวณตามรายชื่อเป้าหมายที่เลือก</span>
+                </div>
+              </div>
+
+              {/* Detected Table */}
+              <div className="overflow-x-auto rounded-xl border border-white/10 mt-1">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950/90 border-b border-white/15 text-[11px] text-slate-300 font-bold uppercase tracking-wider">
+                      <th className="py-2.5 px-3 w-12 text-center font-mono">#</th>
+                      <th className="py-2.5 px-3 min-w-[200px]">ชื่อ-นามสกุล (ตรวจพบ)</th>
+                      <th className="py-2.5 px-3 min-w-[170px]">ชื่อตัดคำนำหน้า (Clean Name)</th>
+                      <th className="py-2.5 px-3 w-28 text-center">บทบาท</th>
+                      <th className="py-2.5 px-3 min-w-[150px]">ธนาคาร / เลขบัญชี</th>
+                      <th className="py-2.5 px-3 text-right font-mono">ยอดรวมที่พบ</th>
+                      <th className="py-2.5 px-3 w-32 text-center">การกระทำ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-[11.5px]">
+                    {detectedNamesList.map((item, idx) => {
+                      const isAlreadyTarget = targetList.some((t) => isTargetMatch(t.cleanName, item.cleanName));
+                      return (
+                        <tr
+                          key={`${item.cleanName}-${idx}`}
+                          className={`hover:bg-white/5 transition-colors ${
+                            idx % 2 === 0 ? "bg-black/20" : "bg-black/40"
+                          }`}
+                        >
+                          <td className="py-3 px-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                          <td className="py-3 px-3 font-semibold text-slate-100">{item.rawName}</td>
+                          <td className="py-3 px-3 font-mono text-sky-300">
+                            <span className="px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/20">
+                              {item.cleanName}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
+                                item.role.includes("ผู้รับโอน")
+                                  ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                                  : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                              }`}
+                            >
+                              {item.role.includes("ผู้รับโอน") ? "ผู้รับโอน" : "ผู้โอน"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-slate-300 font-mono text-[11px]">
+                            <div>{item.bank}</div>
+                            <div className="text-[10px] text-slate-400">{item.accountNo}</div>
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono font-bold text-emerald-400">
+                            <div>฿{item.totalAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</div>
+                            <div className="text-[9.5px] text-slate-400 font-normal">({item.txCount} รายการ)</div>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {isAlreadyTarget ? (
+                              <span className="text-[10.5px] font-semibold text-emerald-400 bg-emerald-500/15 px-2.5 py-1 rounded-lg border border-emerald-500/30 inline-flex items-center gap-1">
+                                ✓ ในเป้าหมายแล้ว
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => addTargetPerson(item.rawName, item.role, item.totalAmount, item.txCount)}
+                                className="btn-proportional-compact text-[10.5px] font-bold px-2.5 py-1 rounded-lg bg-sky-600/40 hover:bg-sky-600/70 text-sky-100 border border-sky-400/50 shadow-sm transition-all"
+                              >
+                                + เพิ่มเป็นเป้าหมาย
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-white/10 flex items-center justify-between bg-black/50 shrink-0">
+              <span className="text-[11px] text-slate-400 font-mono">
+                กฎเหล็ก: "ไม่สนว่าจะมีคำนำหน้าว่าอะไร ชื่อตรง นามสกุลตรง นั้นคือถูก (Zero-Prefix Matching)"
+              </span>
+              <button
+                type="button"
+                onClick={() => setDetectedNamesModalOpen(false)}
+                className="btn-proportional-compact rounded-lg bg-white/10 text-slate-200 hover:bg-white/15 text-xs px-4 py-1.5 transition-colors"
+              >
+                ปิดหน้าต่าง
+              </button>
             </div>
           </div>
         </div>
