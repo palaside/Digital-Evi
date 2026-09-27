@@ -46,8 +46,10 @@ export default function MasterEvidenceWorkspace() {
   const [fullBookOpen, setFullBookOpen] = useState(false);
 
   // Real-Time Clock State (Web App Top Header Bar)
+  const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   useEffect(() => {
+    setMounted(true);
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -633,7 +635,7 @@ export default function MasterEvidenceWorkspace() {
     return {
       dossier_title: "รายงานสรุปสำนวนพยานหลักฐานดิจิทัลคดีอาญา",
       case_number: caseNumber,
-      timestamp: evidenceState.processedAt || new Date().toLocaleString("th-TH"),
+      timestamp: evidenceState.processedAt || (mounted ? new Date().toLocaleString("th-TH") : "รอประมวลผล"),
       defaults: {
         chat_pages: evidenceState.chatPageCount,
         slip_pages: evidenceState.slipCount,
@@ -1078,11 +1080,17 @@ export default function MasterEvidenceWorkspace() {
         <div className="flex items-center gap-5">
           {/* Real-Time Clock & Date */}
           <div className="flex flex-col items-end justify-center font-mono leading-tight">
-            <span className="text-[16px] font-bold text-slate-100 tracking-wider">
-              {formattedTimeStr}
+            <span
+              className="text-[16px] font-bold text-slate-100 tracking-wider"
+              suppressHydrationWarning
+            >
+              {mounted ? formattedTimeStr : "--:--:--"}
             </span>
-            <span className="text-[12px] text-slate-400 font-sans mt-0.5">
-              {formattedDateStr}
+            <span
+              className="text-[12px] text-slate-400 font-sans mt-0.5"
+              suppressHydrationWarning
+            >
+              {mounted ? formattedDateStr : "..."}
             </span>
           </div>
 
