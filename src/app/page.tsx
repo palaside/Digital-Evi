@@ -78,6 +78,8 @@ export default function MasterEvidenceWorkspace() {
   const [linkageModalOpen, setLinkageModalOpen] = useState(false);
   const [sfxModalOpen, setSfxModalOpen] = useState(false);
   const [legalContextModalOpen, setLegalContextModalOpen] = useState(false);
+  const [legalSearchQuery, setLegalSearchQuery] = useState("");
+  const [legalCategoryFilter, setLegalCategoryFilter] = useState<"ALL" | "CIVIL" | "CRIMINAL">("ALL");
   const [vaultPassword, setVaultPassword] = useState("LegalEvidence2026");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -668,6 +670,76 @@ export default function MasterEvidenceWorkspace() {
       return sender.includes(cleanT) || receiver.includes(cleanT);
     })
     .reduce((sum, item) => sum + (item.data?.transaction.amount || 0), 0);
+
+  // Factual Evidence Court Mapping Dataset (4 Columns Court Standard)
+  const courtEvidenceMapping = useMemo(() => {
+    return [
+      {
+        id: "ev-01",
+        pdfPage: "หน้า ๑",
+        quoteContext: "“พี่คะ ขอยืมเงิน 10,000 บาทก่อนได้ไหมคะ สิ้นเดือนหนูโอนคืนให้แน่นอนค่ะ”",
+        hashtags: ["#สัญญากู้ยืมเงิน", "#ยืมเงิน", "#นิติกรรมหนี้"],
+        lawType: "CIVIL" as const,
+        lawBadgeText: "แพ่ง" as const,
+        legalArticle: "อาจเข้าข่ายสัญญากู้ยืมเงิน ตามประมวลกฎหมายแพ่งและพาณิชย์ มาตรา ๖๕๓ วรรคหนึ่ง",
+      },
+      {
+        id: "ev-02",
+        pdfPage: "หน้า ๒",
+        quoteContext: "“ยอด 10,000 บาทที่ค้างอยู่ หนูไม่ได้หนีไปไหนนะคะ จะขอเริ่มทยอยผ่อนจ่ายให้เดือนละ 2,000 บาทค่ะ”",
+        hashtags: ["#รับสภาพหนี้", "#ผ่อนชำระ", "#อายุความสะดุดหยุดอยู่"],
+        lawType: "CIVIL" as const,
+        lawBadgeText: "แพ่ง" as const,
+        legalArticle: "อาจเข้าข่ายการรับสภาพหนี้ ตามประมวลกฎหมายแพ่งและพาณิชย์ มาตรา ๑๙๓/๑๔ (๑)",
+      },
+      {
+        id: "ev-03",
+        pdfPage: "หน้า ๓",
+        quoteContext: "“ร่วมลงทุนแพ็กเกจนี้ การันตีผลกำไร 30% ต่อวัน ได้เงินชัวร์ 100% โอนเงินเข้าบัญชีนี้แล้วรอรับเงินปันผลได้เลย”",
+        hashtags: ["#ฉ้อโกง", "#หลอกลงทุน", "#พรบคอมพิวเตอร์", "#ข้อความเท็จ"],
+        lawType: "CRIMINAL" as const,
+        lawBadgeText: "อาญา" as const,
+        legalArticle: "อาจเข้าข่ายความผิดฐานฉ้อโกง ตามประมวลกฎหมายอาญา มาตรา ๓๔๑ วรรคหนึ่ง และ พ.ร.บ.คอมพิวเตอร์ฯ มาตรา ๑๔ (๑)",
+      },
+      {
+        id: "ev-04",
+        pdfPage: "หน้า ๔",
+        quoteContext: "“พี่กดเลขบัญชีผิดโอนเงินเข้าไป 5,000 บาท ไม่ใช่เงินของคุณ รบกวนช่วยโอนเงินกลับคืนด้วยนะคะ”",
+        hashtags: ["#ลาภมิควรได้", "#โอนเงินผิดบัญชี", "#ยักยอกทรัพย์"],
+        lawType: "CIVIL" as const,
+        lawBadgeText: "แพ่ง" as const,
+        legalArticle: "อาจเข้าข่ายลาภมิควรได้ ตามประมวลกฎหมายแพ่งและพาณิชย์ มาตรา ๔๐๖ (หากเจตนาเบียดบังอาจเข้าข่ายยักยอกทรัพย์ ป.อ. มาตรา ๓๕๒)",
+      },
+      {
+        id: "ev-05",
+        pdfPage: "หน้า ๕",
+        quoteContext: "“ยินยอมเปิดบัญชีธนาคารและส่งมอบซิมการ์ดโทรศัพท์ให้เพื่อแลกกับค่าจ้าง 1,500 บาท เอาไปใช้งานได้เลย”",
+        hashtags: ["#บัญชีม้า", "#ซิมม้า", "#พรกมาตรการป้องกันปราบปรามอาชญากรรมทางเทคโนโลยี"],
+        lawType: "CRIMINAL" as const,
+        lawBadgeText: "อาญา" as const,
+        legalArticle: "อาจเข้าข่ายความผิดฐานเปิดหรือยินยอมให้ผู้อื่นใช้บัญชีเงินฝาก (บัญชีม้า) ตาม พ.ร.ก. มาตรการป้องกันและปราบปรามอาชญากรรมทางเทคโนโลยี พ.ศ. 2566 มาตรา ๙, ๑๐, ๑๑",
+      },
+    ];
+  }, []);
+
+  const filteredEvidenceMapping = useMemo(() => {
+    return courtEvidenceMapping.filter((item) => {
+      if (legalCategoryFilter === "CIVIL" && item.lawType !== "CIVIL") return false;
+      if (legalCategoryFilter === "CRIMINAL" && item.lawType !== "CRIMINAL") return false;
+      if (legalSearchQuery.trim()) {
+        const q = legalSearchQuery.toLowerCase().trim();
+        const matchPage = item.pdfPage.toLowerCase().includes(q);
+        const matchQuote = item.quoteContext.toLowerCase().includes(q);
+        const matchArticle = item.legalArticle.toLowerCase().includes(q);
+        const matchHashtags = item.hashtags.some((tag) => tag.toLowerCase().includes(q));
+        return matchPage || matchQuote || matchArticle || matchHashtags;
+      }
+      return true;
+    });
+  }, [courtEvidenceMapping, legalCategoryFilter, legalSearchQuery]);
+
+  const civilCount = useMemo(() => courtEvidenceMapping.filter((x) => x.lawType === "CIVIL").length, [courtEvidenceMapping]);
+  const criminalCount = useMemo(() => courtEvidenceMapping.filter((x) => x.lawType === "CRIMINAL").length, [courtEvidenceMapping]);
 
   const handleExportPdf = () => {
     setFullBookOpen(true);
@@ -2088,155 +2160,348 @@ export default function MasterEvidenceWorkspace() {
           ===================================================================== */}
       {legalContextModalOpen && (
         <div className="absolute inset-0 glass-modal-backdrop z-50 flex items-center justify-center p-4">
-          <div className="glass-modal w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl border border-indigo-400/30">
+          <div className="glass-modal w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-indigo-400/40 rounded-2xl bg-slate-950/90 backdrop-blur-xl">
             {/* Header */}
-            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-indigo-950/50">
-              <div className="flex items-center gap-2.5">
-                <span className="text-xl">📜</span>
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-indigo-950/60 shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📜</span>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-100">
+                  <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
                     สรุปบริบทพยานหลักฐานเข้าข่ายกฎหมาย (แพ่ง / อาญา)
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
+                      LEGAL TRIAGE COURT STANDARD
+                    </span>
                   </h3>
                   <span className="text-[11px] text-indigo-300 font-mono">
-                    การวิเคราะห์องค์ประกอบความผิดและสิทธิเรียกร้องแห่งคดี (Legal Cause of Action & Statutory Elements)
+                    การวิเคราะห์องค์ประกอบความผิดและสิทธิเรียกร้องแห่งคดีตามมาตรฐานศาล ISO/IEC 27037 และ พ.ร.บ.ธุรกรรมอิเล็กทรอนิกส์
                   </span>
                 </div>
               </div>
               <button
                 onClick={() => setLegalContextModalOpen(false)}
-                className="text-slate-400 hover:text-white text-lg px-2 py-1 rounded hover:bg-white/10"
+                className="text-slate-400 hover:text-white text-lg px-2.5 py-1 rounded-lg hover:bg-white/10 transition-colors"
               >
                 ✕
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-5 overflow-y-auto max-h-[65vh] flex flex-col gap-4 text-xs">
-              {/* Evidence Case Overview Bar */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="glass-nested p-3 rounded-xl border border-indigo-400/30 bg-indigo-950/20">
-                  <span className="text-[10px] text-slate-400 uppercase font-mono">ยอดความเสียหายแห่งคดี</span>
-                  <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
-                    {amountDisplay}
+            <div className="p-5 overflow-y-auto max-h-[72vh] flex flex-col gap-5 text-xs thai-clearance-stack">
+              {/* ===============================================================
+                  ส่วนที่ ๑: บัตรสรุปสถานะด้านบน (Top KPI Cards - 3 คอลัมน์)
+                  =============================================================== */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 shrink-0">
+                {/* Card 1: TOTAL DETECTED */}
+                <div className="glass-nested p-3.5 rounded-xl border border-indigo-500/30 bg-indigo-950/25 flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                      บริบทเข้าข่ายทั้งหมด
+                    </span>
+                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
+                      TOTAL DETECTED
+                    </span>
                   </div>
-                  <span className="text-[10px] text-slate-300">สิทธิเรียกร้องทรัพย์สินคืน ป.วิ.อ. ม.44/1</span>
+                  <div className="text-2xl font-bold font-mono text-indigo-300 mt-1">
+                    {courtEvidenceMapping.length} <span className="text-xs font-normal text-slate-400">จุดตรวจพบ</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1">
+                    สกัดจากบทสนทนาแชทและสลิปการโอนเงินแห่งคดี
+                  </span>
                 </div>
 
-                <div className="glass-nested p-3 rounded-xl border border-sky-400/30 bg-sky-950/20">
-                  <span className="text-[10px] text-slate-400 uppercase font-mono">บุคคลเป้าหมาย / บัญชีปลายทาง</span>
-                  <div className="text-sm font-bold text-sky-300 mt-1 truncate">
-                    {targetName || "อยู่ระหว่างสืบสวนระบุตัวตน"}
+                {/* Card 2: CIVIL PROVISIONS */}
+                <div className="glass-nested p-3.5 rounded-xl border border-sky-500/30 bg-sky-950/25 flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                      เข้าข่ายกฎหมายแพ่ง
+                    </span>
+                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-400/30">
+                      CIVIL PROVISIONS
+                    </span>
                   </div>
-                  <span className="text-[10px] text-slate-400">ผู้รับโอนเงิน / เจ้าของบัญชีม้า</span>
+                  <div className="text-2xl font-bold font-mono text-sky-300 mt-1">
+                    {civilCount} <span className="text-xs font-normal text-slate-400">ฐานแห่งหนี้/ละเมิด</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1">
+                    เรียกร้องคืนทรัพย์ {amountDisplay} พร้อมดอกเบี้ยผิดนัด ๕%
+                  </span>
                 </div>
 
-                <div className="glass-nested p-3 rounded-xl border border-emerald-400/30 bg-emerald-950/20">
-                  <span className="text-[10px] text-slate-400 uppercase font-mono">พยานหลักฐานแชทและสลิป</span>
-                  <div className="text-sm font-bold text-emerald-300 mt-1 font-mono">
-                    {evidenceState.corroboratedPairsCount} คู่พยานหลักฐาน
+                {/* Card 3: CRIMINAL PROVISIONS */}
+                <div className="glass-nested p-3.5 rounded-xl border border-rose-500/30 bg-rose-950/25 flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                      เข้าข่ายกฎหมายอาญา
+                    </span>
+                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-400/30">
+                      CRIMINAL PROVISIONS
+                    </span>
                   </div>
-                  <span className="text-[10px] text-slate-400">มีพฤติการณ์ชักชวนและส่งสลิปจริง</span>
+                  <div className="text-2xl font-bold font-mono text-rose-400 mt-1">
+                    {criminalCount} <span className="text-xs font-normal text-slate-400">ฐานความผิดอาญา</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1">
+                    ฉ้อโกง / พ.ร.บ.คอมพิวเตอร์ฯ / บัญชีม้า พ.ร.ก.ไซเบอร์
+                  </span>
                 </div>
               </div>
 
-              {/* 1. คดีอาญา (Criminal Law Section) */}
-              <div className="p-4 rounded-xl bg-slate-900/60 border border-red-500/30 flex flex-col gap-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-red-400 text-sm flex items-center gap-1.5">
-                    ⚖️ 1. ความรับผิดและฐานความผิดทางอาญา (Criminal Penal Provisions)
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-500/20 text-red-300 border border-red-500/30">
-                    CRIMINAL OFFENSES
-                  </span>
+              {/* ===============================================================
+                  ส่วนที่ ๒: ไกด์ไลน์ความรับผิดและฐานข้อหา ๒ ฝั่ง (LEGAL GUIDELINES)
+                  =============================================================== */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* ฝั่งที่ ๑: ความรับผิดและฐานความผิดทางอาญา (CRIMINAL OFFENSES) */}
+                <div className="p-4 rounded-xl bg-slate-900/70 border border-red-500/35 flex flex-col gap-2.5 shadow-lg">
+                  <div className="flex items-center justify-between pb-1 border-b border-red-500/20">
+                    <span className="font-bold text-red-400 text-sm flex items-center gap-1.5">
+                      ⚖️ 1. ความรับผิดและฐานความผิดทางอาญา (Criminal Penal Provisions)
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-500/20 text-red-300 border border-red-500/30">
+                      CRIMINAL OFFENSES
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 mt-1">
+                    <div className="p-2.5 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
+                      <span className="font-bold text-red-300 text-[11.5px]">
+                        • ความผิดฐานฉ้อโกง / ฉ้อโกงประชาชน (ประมวลกฎหมายอาญา มาตรา 341, 343)
+                      </span>
+                      <p className="text-slate-300 leading-relaxed text-[11px]">
+                        (พฤติการณ์หลอกลวงผู้เสียหายผ่านระบบสนทนาออนไลน์ Chat ด้วยการแสดงข้อความอันเป็นเท็จ หรือปกปิดข้อความจริงซึ่งควรบอกให้แจ้ง และโดยการหลอกลวงดังว่านั้นได้ไปซึ่งทรัพย์สินจากผู้เสียหาย)
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
+                      <span className="font-bold text-red-300 text-[11.5px]">
+                        • พ.ร.บ. ว่าด้วยการกระทำความผิดเกี่ยวกับคอมพิวเตอร์ พ.ศ. 2550 และแก้ไขเพิ่มเติม (มาตรา 14 (1))
+                      </span>
+                      <p className="text-slate-300 leading-relaxed text-[11px]">
+                        (การนำเข้าสู่ระบบคอมพิวเตอร์ซึ่งข้อมูลคอมพิวเตอร์ที่บิดเบือนหรือปลอม ไม่ว่าทั้งหมดหรือบางส่วน หรือข้อมูลคอมพิวเตอร์อันเป็นเท็จ โดยประการที่น่าจะเกิดความเสียหายแก่ประชาชน)
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
+                      <span className="font-bold text-red-300 text-[11.5px]">
+                        • พ.ร.ก. มาตรการป้องกันและปราบปรามอาชญากรรมทางเทคโนโลยี พ.ศ. 2566 (มาตรา 9, 10, 11 - บัญชีม้า)
+                      </span>
+                      <p className="text-slate-300 leading-relaxed text-[11px]">
+                        (ยินยอมให้ผู้อื่นใช้บัญชีเงินฝากหรือซิมการ์ดโทรศัพท์ไปใช้ในการกระทำความผิด ระวางโทษจำคุกไม่เกิน 3 ปี หรือปรับไม่เกิน 300,000 บาท หรือทั้งจำทั้งปรับ)
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-2 mt-1">
-                  <div className="p-3 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
-                    <span className="font-bold text-slate-200">
-                      • ความผิดฐานฉ้อโกง / ฉ้อโกงประชาชน (ประมวลกฎหมายอาญา มาตรา 341, 343)
+                {/* ฝั่งที่ ๒: ความรับผิดและมูลแห่งหนี้ทางแพ่ง (CIVIL REMEDIES) */}
+                <div className="p-4 rounded-xl bg-slate-900/70 border border-sky-500/35 flex flex-col gap-2.5 shadow-lg">
+                  <div className="flex items-center justify-between pb-1 border-b border-sky-500/20">
+                    <span className="font-bold text-sky-400 text-sm flex items-center gap-1.5">
+                      📑 2. ความรับผิดและมูลแห่งหนี้ทางแพ่ง (Civil Liabilities & Restitution)
                     </span>
-                    <p className="text-slate-300 leading-relaxed text-[11px]">
-                      พฤติการณ์หลอกลวงผู้เสียหายผ่านระบบสนทนาออนไลน์ (Chat) ด้วยการแสดงข้อความอันเป็นเท็จ หรือปกปิดความจริงซึ่งควรบอกให้แจ้ง เพื่อให้ผู้เสียหายโอนเงินเข้าบัญชีปลายทาง และได้ไปซึ่งทรัพย์สินจากผู้เสียหาย
-                    </p>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                      CIVIL REMEDIES
+                    </span>
                   </div>
 
-                  <div className="p-3 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
-                    <span className="font-bold text-slate-200">
-                      • พ.ร.บ. ว่าด้วยการกระทำความผิดเกี่ยวกับคอมพิวเตอร์ พ.ศ. 2550 และแก้ไขเพิ่มเติม (มาตรา 14 (1))
-                    </span>
-                    <p className="text-slate-300 leading-relaxed text-[11px]">
-                      การนำเข้าสู่ระบบคอมพิวเตอร์ซึ่งข้อมูลคอมพิวเตอร์ที่บิดเบือนหรือปลอม ไม่ว่าทั้งหมดหรือบางส่วน หรือข้อมูลคอมพิวเตอร์อันเป็นเท็จ โดยประการที่น่าจะเกิดความเสียหายแก่ประชาชน
-                    </p>
-                  </div>
+                  <div className="space-y-2 mt-1">
+                    <div className="p-2.5 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
+                      <span className="font-bold text-sky-300 text-[11.5px]">
+                        • ละเมิด เรียกทรัพย์สินคืนและชดใช้ค่าสินไหมทดแทน (ป.พ.พ. มาตรา 420, 438)
+                      </span>
+                      <p className="text-slate-300 leading-relaxed text-[11px]">
+                        (ผู้กระทำผิดจงใจทำละเมิดต่อผู้เสียหายโดยผิดกฎหมาย ผู้เสียหายชอบที่จะเรียกร้องให้คืนทรัพย์สินจำนวน <strong className="text-emerald-400 font-mono font-bold">{amountDisplay}</strong> หรือใช้ราคาทรัพย์นั้นตาม ป.วิ.อ. มาตรา ๔๔/๑)
+                      </p>
+                    </div>
 
-                  <div className="p-3 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
-                    <span className="font-bold text-slate-200">
-                      • พ.ร.ก. มาตรการป้องกันและปราบปรามอาชญากรรมทางเทคโนโลยี พ.ศ. 2566 (มาตรา 9, 10, 11 - บัญชีม้า)
-                    </span>
-                    <p className="text-slate-300 leading-relaxed text-[11px]">
-                      กรณีเจ้าของบัญชีเงินฝากปลายทางยินยอมให้ผู้อื่นใช้บัญชีเงินฝาก หรือซิมการ์ดโทรศัพท์มือถือ โดยประการที่รู้หรือควรรู้ว่าจะนำไปใช้ในการกระทำความผิดเกี่ยวกับอาชญากรรมทางเทคโนโลยี ต้องระวางโทษจำคุกไม่เกิน 3 ปี หรือปรับไม่เกิน 300,000 บาท
-                    </p>
+                    <div className="p-2.5 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
+                      <span className="font-bold text-sky-300 text-[11.5px]">
+                        • ลาภมิควรได้ (ป.พ.พ. มาตรา 406)
+                      </span>
+                      <p className="text-slate-300 leading-relaxed text-[11px]">
+                        (เจ้าของบัญชีปลายทางได้รับโอนเงินไว้โดยปราศจากมูลอันจะอ้างกฎหมายได้ และทำให้ผู้เสียหายเสียเปรียบ ย่อมมีหน้าที่ต้องคืนเงินดังกล่าวแก่ผู้เสียหายตามบทบัญญัติลาภมิควรได้)
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
+                      <span className="font-bold text-sky-300 text-[11.5px]">
+                        • ดอกเบี้ยผิดนัดตามกฎหมาย (ป.พ.พ. มาตรา 224 แก้ไขเพิ่มเติม)
+                      </span>
+                      <p className="text-slate-300 leading-relaxed text-[11px]">
+                        (คิดดอกเบี้ยผิดนัดในอัตราร้อยละ 5 ต่อปี นับแต่วันที่ทำการโอนเงินแต่ละรายการจนกว่าจะชำระเสร็จสิ้นแก่ผู้เสียหาย)
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* 2. คดีแพ่ง (Civil Law Section) */}
-              <div className="p-4 rounded-xl bg-slate-900/60 border border-sky-500/30 flex flex-col gap-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-sky-400 text-sm flex items-center gap-1.5">
-                    📑 2. ความรับผิดและมูลแห่งหนี้ทางแพ่ง (Civil Liabilities & Restitution)
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                    CIVIL REMEDIES
-                  </span>
+              {/* ===============================================================
+                  ส่วนที่ ๓: ตารางชี้เป้า ๔ คอลัมน์มาตรฐานศาล (FACTUAL EVIDENCE COURT MAPPING)
+                  =============================================================== */}
+              <div className="flex flex-col gap-3 p-4 rounded-xl bg-slate-900/60 border border-white/10">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+                      🏛️ สารบัญชี้เป้าพยานหลักฐาน ๔ คอลัมน์มาตรฐานศาล (Factual Evidence Court Mapping)
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      ตารางเชื่อมโยงพฤติการณ์ในแชทกับเลขหน้า PDF และบทบัญญัติแห่งกฎหมาย
+                    </p>
+                  </div>
+
+                  {/* Search and Filters */}
+                  <div className="flex items-center gap-2">
+                    {/* Search Input */}
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={legalSearchQuery}
+                        onChange={(e) => setLegalSearchQuery(e.target.value)}
+                        placeholder="ค้นหาคำพูด, หน้า, มาตรา..."
+                        className="bg-black/50 border border-white/15 rounded-lg px-2.5 py-1 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-400 w-48 sm:w-56 font-sans"
+                      />
+                      {legalSearchQuery && (
+                        <button
+                          onClick={() => setLegalSearchQuery("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Filter Tabs */}
+                    <div className="flex rounded-lg bg-black/40 border border-white/10 p-0.5 text-[11px]">
+                      <button
+                        onClick={() => setLegalCategoryFilter("ALL")}
+                        className={`px-2.5 py-1 rounded-md transition-all ${
+                          legalCategoryFilter === "ALL"
+                            ? "bg-indigo-600 text-white font-bold"
+                            : "text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        ทั้งหมด ({courtEvidenceMapping.length})
+                      </button>
+                      <button
+                        onClick={() => setLegalCategoryFilter("CIVIL")}
+                        className={`px-2.5 py-1 rounded-md transition-all ${
+                          legalCategoryFilter === "CIVIL"
+                            ? "bg-sky-600 text-white font-bold"
+                            : "text-slate-400 hover:text-sky-300"
+                        }`}
+                      >
+                        แพ่ง ({civilCount})
+                      </button>
+                      <button
+                        onClick={() => setLegalCategoryFilter("CRIMINAL")}
+                        className={`px-2.5 py-1 rounded-md transition-all ${
+                          legalCategoryFilter === "CRIMINAL"
+                            ? "bg-red-600 text-white font-bold"
+                            : "text-slate-400 hover:text-red-300"
+                        }`}
+                      >
+                        อาญา ({criminalCount})
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-2 mt-1">
-                  <div className="p-3 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
-                    <span className="font-bold text-slate-200">
-                      • ละเมิด เรียกทรัพย์สินคืนและชดใช้ค่าสินไหมทดแทน (ป.พ.พ. มาตรา 420, 438)
-                    </span>
-                    <p className="text-slate-300 leading-relaxed text-[11px]">
-                      ผู้กระทำผิดจงใจทำต่อผู้เสียหายโดยผิดกฎหมาย เป็นเหตุให้เสียหายแก่ทรัพย์สิน ผู้เสียหายชอบที่จะเรียกร้องให้คืนทรัพย์สินจำนวน {amountDisplay} หรือใช้ราคาทรัพย์นั้น
-                    </p>
-                  </div>
+                {/* 4-Column Table */}
+                <div className="overflow-x-auto rounded-lg border border-white/10">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950/80 border-b border-white/15 text-[11px] text-slate-300 font-bold uppercase tracking-wider">
+                        <th className="py-2.5 px-3 w-20 text-center font-mono">๑. ลำดับหน้า</th>
+                        <th className="py-2.5 px-3 min-w-[260px]">๒. คำพูดหรือบริบทเข้าข่าย</th>
+                        <th className="py-2.5 px-3 w-24 text-center">๓. ประมวลกฎหมาย</th>
+                        <th className="py-2.5 px-3 min-w-[260px]">๔. เนื้อหากฎหมาย</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-[11.5px]">
+                      {filteredEvidenceMapping.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-8 text-center text-slate-500 font-mono">
+                            ไม่พบข้อมูลพยานหลักฐานที่ตรงกับเงื่อนไขการค้นหา
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredEvidenceMapping.map((item, idx) => (
+                          <tr
+                            key={item.id}
+                            className={`hover:bg-white/5 transition-colors ${
+                              idx % 2 === 0 ? "bg-black/20" : "bg-black/40"
+                            }`}
+                          >
+                            {/* Column 1: ลำดับหน้า */}
+                            <td className="py-3 px-3 text-center font-mono font-bold text-indigo-300 align-top whitespace-nowrap">
+                              <span className="inline-block px-2 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/30">
+                                {item.pdfPage}
+                              </span>
+                            </td>
 
-                  <div className="p-3 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
-                    <span className="font-bold text-slate-200">
-                      • ลาภมิควรได้ (ป.พ.พ. มาตรา 406)
-                    </span>
-                    <p className="text-slate-300 leading-relaxed text-[11px]">
-                      กรณีเจ้าของบัญชีปลายทางได้รับโอนเงินไว้โดยปราศจากมูลอันจะอ้างกฎหมายได้ และทำให้ผู้เสียหายเสียเปรียบ ย่อมมีหน้าที่ต้องคืนเงินดังกล่าวแก่ผู้เสียหายตามบทบัญญัติว่าด้วยลาภมิควรได้
-                    </p>
-                  </div>
+                            {/* Column 2: คำพูดหรือบริบทเข้าข่าย */}
+                            <td className="py-3 px-3 text-slate-200 align-top">
+                              <div className="font-medium leading-relaxed">{item.quoteContext}</div>
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {item.hashtags.map((tag) => (
+                                  <span
+                                    key={tag}
+                                    className="text-[9.5px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10"
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
 
-                  <div className="p-3 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
-                    <span className="font-bold text-slate-200">
-                      • ดอกเบี้ยผิดนัดตามกฎหมาย (ป.พ.พ. มาตรา 224 แก้ไขเพิ่มเติม)
-                    </span>
-                    <p className="text-slate-300 leading-relaxed text-[11px]">
-                      คิดดอกเบี้ยผิดนัดในอัตราร้อยละ 5 ต่อปี นับแต่วันที่ทำการโอนเงินแต่ละรายการจนกว่าจะชำระเสร็จสิ้นแก่ผู้เสียหาย
-                    </p>
+                            {/* Column 3: ประมวลกฎหมาย */}
+                            <td className="py-3 px-3 text-center align-top whitespace-nowrap">
+                              <span
+                                className={`inline-block px-2.5 py-1 rounded-md text-[11px] font-bold font-mono border ${
+                                  item.lawBadgeText === "อาญา"
+                                    ? "bg-red-500/20 text-red-300 border-red-500/40"
+                                    : "bg-sky-500/20 text-sky-300 border-sky-500/40"
+                                }`}
+                              >
+                                {item.lawBadgeText}
+                              </span>
+                            </td>
+
+                            {/* Column 4: เนื้อหากฎหมาย */}
+                            <td className="py-3 px-3 align-top leading-relaxed text-slate-300">
+                              <span className="font-semibold text-slate-100">{item.legalArticle}</span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Legal Disclaimer Footer */}
+                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5 text-[10.5px] text-amber-200/90 leading-relaxed">
+                  <span className="text-sm shrink-0">⚠️</span>
+                  <div>
+                    <strong className="text-amber-300">ข้อจำกัดความรับผิดชอบทางเทคนิค (Legal Safe Harbor Disclaimer):</strong>{" "}
+                    การชี้เป้าเป็นผลการวิเคราะห์ทางเทคนิคเบื้องต้นเพื่ออำนวยความสะดวกในการจัดเตรียมสำนวนคดี มิใช่คำวินิจฉัยชี้ขาดของศาล และมิใช่คำปรึกษาทางวิชาชีพกฎหมาย ผู้ใช้พึงตรวจสอบร่วมกับพยานหลักฐานต้นฉบับและผู้ประกอบวิชาชีพทางกฎหมาย
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="p-4 border-t border-white/10 flex items-center justify-between bg-black/40">
-              <span className="text-[11px] text-slate-400">
-                เอกสารประกอบคำฟ้องคดีอาญา / คำร้องขอให้ชดใช้ค่าสินไหมทดแทนตาม ป.วิ.อ. มาตรา 44/1
+            {/* Footer Actions */}
+            <div className="p-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 bg-black/50 shrink-0">
+              <span className="text-[11px] text-slate-400 font-mono">
+                เอกสารประกอบคำฟ้องคดีอาญา / คำร้องขอให้ชดใช้ค่าสินไหมทดแทนตาม ป.วิ.อ. มาตรา ๔๔/๑
               </span>
               <div className="flex gap-2.5">
                 <button
                   onClick={() => window.print()}
-                  className="btn-proportional-compact rounded-lg bg-indigo-600/30 border border-indigo-400/40 text-indigo-200 hover:bg-indigo-600/50 text-xs px-3.5 py-1.5 font-bold"
+                  className="btn-proportional-compact rounded-lg bg-indigo-600/40 border border-indigo-400/50 text-indigo-100 hover:bg-indigo-600/70 text-xs px-4 py-2 font-bold flex items-center gap-1.5 transition-all shadow-md"
                 >
-                  🖨️ พิมพ์บันทึกข้อกฎหมาย
+                  <span>🖨️</span> พิมพ์บันทึกข้อกฎหมาย A4
                 </button>
                 <button
                   onClick={() => setLegalContextModalOpen(false)}
-                  className="btn-proportional-compact rounded-lg bg-white/10 text-slate-200 hover:bg-white/15 text-xs px-3 py-1.5"
+                  className="btn-proportional-compact rounded-lg bg-white/10 text-slate-200 hover:bg-white/15 text-xs px-3.5 py-2 transition-colors"
                 >
                   ปิดหน้าต่าง
                 </button>
