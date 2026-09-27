@@ -74,6 +74,10 @@ export default function MasterEvidenceWorkspace() {
   const [metadata, setMetadata] = useState<ExtractionMetadata | null>(null);
   const [manifestList, setManifestList] = useState<HashManifestEntry[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [ledgerModalOpen, setLedgerModalOpen] = useState(false);
+  const [linkageModalOpen, setLinkageModalOpen] = useState(false);
+  const [sfxModalOpen, setSfxModalOpen] = useState(false);
+  const [vaultPassword, setVaultPassword] = useState("LegalEvidence2026");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Pure Zero State (SSOT Bi-Directional State)
@@ -652,6 +656,21 @@ export default function MasterEvidenceWorkspace() {
   const amountDisplay = evidenceState.totalNetLoss > 0
     ? `฿ ${evidenceState.totalNetLoss.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`
     : "฿ 0.00";
+
+  const poiAmount = stagedQueue
+    .filter((item) => {
+      if (item.category !== "SLIP" || !item.data || item.isDuplicate) return false;
+      if (!targetName) return false;
+      const cleanT = targetName.replace(/^(นาย|นางสาว|นาง|ด\.ช\.|ด\.ญ\.|พ\.ต\.ท\.|พ\.ต\.อ\.|ร\.ต\.อ\.)/g, "").trim().toLowerCase();
+      const sender = (item.data.sender?.name || "").toLowerCase();
+      const receiver = (item.data.receiver?.name || "").toLowerCase();
+      return sender.includes(cleanT) || receiver.includes(cleanT);
+    })
+    .reduce((sum, item) => sum + (item.data?.transaction.amount || 0), 0);
+
+  const handleExportPdf = () => {
+    setFullBookOpen(true);
+  };
 
   return (
     <div className="app-fit-shell bg-transparent text-slate-100 select-none">
@@ -1244,86 +1263,235 @@ export default function MasterEvidenceWorkspace() {
             </span>
           </div>
 
-          <div className="panel-scroll-body thai-clearance-stack pr-1">
-            {/* KPI Card 1: Total Net Loss */}
-            <div className="glass-card p-4">
-              <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">
-                ยอดเงินรวมแห่งคดี (฿ Net Volume)
-              </span>
-              <div className="font-mono text-2xl font-bold text-emerald-400 mt-1">
-                {amountDisplay}
+          <div className="panel-scroll-body thai-clearance-stack pr-1 flex flex-col gap-3">
+            {/* =================================================================
+                LAYER 1: 4 KPI CARDS (2x2 Grid)
+                1. ยอดเงินรวมแห่งคดี
+                2. ยอดของบุคคลเป้าหมาย
+                3. แชทและสลิปที่สัมพันธ์
+                4. สรุปหน้าที่ซ้ำกันทั้ง
+                ================================================================= */}
+            <div className="grid grid-cols-2 gap-2">
+              {/* Card 1: 1. ยอดเงินรวมแห่งคดี */}
+              <div className="glass-card p-3 rounded-xl flex flex-col justify-between border border-white/10 hover:border-emerald-400/40 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-300">
+                    1. ยอดรวมคดี
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
+                </div>
+                <div className="font-mono text-base font-bold text-emerald-400 mt-1 truncate">
+                  {amountDisplay}
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+                  <span>สลิป: {evidenceState.slipCount} ใบ</span>
+                  <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/20">
+                    NET
+                  </span>
+                </div>
               </div>
-              <div className="text-xs text-slate-400 mt-1 flex justify-between">
-                <span>สลิปในสำนวน: {evidenceState.slipCount} รายการ</span>
-                <span className="text-emerald-400 font-semibold">
-                  {evidenceState.slipCount > 0 ? "✓ ZOD PASS" : "PURE ZERO STATE"}
-                </span>
+
+              {/* Card 2: 2. ยอดของบุคคลเป้าหมาย */}
+              <div className="glass-card p-3 rounded-xl flex flex-col justify-between border border-white/10 hover:border-sky-400/40 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-300">
+                    2. ยอดเป้าหมาย
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-sky-400 shadow-[0_0_8px_#38bdf8]"></span>
+                </div>
+                <div className="font-mono text-base font-bold text-sky-400 mt-1 truncate">
+                  ฿ {(targetName ? poiAmount : 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+                  <span className="truncate max-w-[85px]">{targetName || "ยังไม่ระบุ"}</span>
+                  <span className="text-[9px] font-mono text-sky-400 bg-sky-500/10 px-1 py-0.5 rounded border border-sky-500/20">
+                    POI
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 3: 3. แชทและสลิปที่สัมพันธ์ */}
+              <div className="glass-card p-3 rounded-xl flex flex-col justify-between border border-white/10 hover:border-teal-400/40 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-300">
+                    3. สอดคล้อง 1:1
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-teal-400 shadow-[0_0_8px_#2dd4bf]"></span>
+                </div>
+                <div className="font-mono text-base font-bold text-teal-300 mt-1">
+                  {evidenceState.corroboratedPairsCount} คู่
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+                  <span>แชทคู่สลิปจริง</span>
+                  <span className="text-[9px] font-mono text-teal-400 bg-teal-500/10 px-1 py-0.5 rounded border border-teal-500/20">
+                    PAIRS
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 4: 4. สรุปหน้าที่ซ้ำกันทั้ง */}
+              <div className="glass-card p-3 rounded-xl flex flex-col justify-between border border-white/10 hover:border-amber-400/40 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-300">
+                    4. หน้าที่ซ้ำกัน
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24]"></span>
+                </div>
+                <div className="font-mono text-base font-bold text-amber-400 mt-1">
+                  {evidenceState.duplicateCount} จุด
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+                  <span>ตัดยอดสุทธิ</span>
+                  <span className="text-[9px] font-mono text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20">
+                    DEDUP
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* KPI Card 2: Extraction Status */}
-            <div className="glass-card p-4">
-              <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">
-                สถานะการถอดรหัส (Extraction Status)
-              </span>
-              <div className="typo-label font-bold text-sky-400 mt-1 truncate">
+            {/* =================================================================
+                LAYER 2: สถานะการถอดรหัส (EXTRACTION STATUS) - คงเดิม
+                ================================================================= */}
+            <div className="glass-card p-3.5 rounded-xl border border-white/10">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">
+                  สถานะการถอดรหัส (Extraction Status)
+                </span>
+                <span className="text-[10px] font-mono font-semibold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-400/20">
+                  {extractedData ? "DECODED" : "STANDBY"}
+                </span>
+              </div>
+              <div className="typo-label font-bold text-sky-400 mt-1 truncate text-xs">
                 {extractedData?.bank?.name
                   ? `ธนาคาร: ${extractedData.bank.name}`
                   : "ระบบพร้อมตรวจรับไฟล์สลิปจริง"}
               </div>
-              <div className="text-xs text-slate-400 mt-1 font-mono truncate">
+              <div className="text-[11px] text-slate-400 mt-0.5 font-mono truncate">
                 Ref ID: {extractedData?.transaction?.reference_no || "-"}
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="glass-nested p-3.5 rounded-xl flex flex-col gap-2.5">
+            {/* =================================================================
+                LAYER 3: 2 ปุ่มเพิ่มเติม
+                - ปุ่มตารางสรุปหลักฐาน
+                - ปุ่มตรวจสอบความเชื่อมโยง
+                ================================================================= */}
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => setLedgerModalOpen(true)}
+                className="btn-proportional-primary glass-button glass-button-cyan w-full justify-between items-center text-xs py-2 px-3 rounded-lg border border-sky-400/30 hover:border-sky-400/60 bg-sky-950/30 hover:bg-sky-900/40 transition-all shadow-sm group"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm group-hover:scale-110 transition-transform">📋</span>
+                  <span className="font-semibold text-slate-100">ตารางสรุปหลักฐาน</span>
+                </div>
+                <span className="text-[10px] font-mono text-sky-300 bg-sky-500/20 px-1.5 py-0.5 rounded border border-sky-400/30">
+                  10 คอลัมน์ ↗
+                </span>
+              </button>
+
+              <button
+                onClick={() => setLinkageModalOpen(true)}
+                className="btn-proportional-primary glass-button w-full justify-between items-center text-xs py-2 px-3 rounded-lg border border-emerald-400/30 hover:border-emerald-400/60 bg-emerald-950/25 hover:bg-emerald-900/35 transition-all shadow-sm text-left group"
+                title="สรุปการจับคู่ลำดับหน้าจากไฟล์ PDF ที่มีสลิปแปะไว้ คู่กับ ลำดับของสลิป จาก PDF"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm shrink-0 group-hover:scale-110 transition-transform">🔗</span>
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-semibold text-emerald-300 truncate">ตรวจสอบความเชื่อมโยง</span>
+                    <span className="text-[9.5px] text-slate-400 leading-tight truncate">
+                      (สรุปการจับคู่ลำดับหน้าจากไฟล์ PDF ที่มีสลิปแปะไว้ คู่กับ ลำดับของสลิป จาก PDF)
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-400/30 shrink-0 ml-1">
+                  Linkage ↗
+                </span>
+              </button>
+            </div>
+
+            {/* =================================================================
+                LAYER 4: เครื่องมือสำนวนศาลทั้ง 4 ข้อ - คงเดิม
+                ================================================================= */}
+            <div className="glass-nested p-3 rounded-xl flex flex-col gap-2">
               <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                 เครื่องมือสำนวนศาล (SSOT Aligned)
               </span>
               <button
                 onClick={() => setCenterView("COVER_PAGE")}
-                className="btn-proportional-primary glass-button glass-button-cyan w-full justify-start"
+                className="btn-proportional-primary glass-button glass-button-cyan w-full justify-start text-xs py-2"
               >
                 🏛️ ดูหน้าปกสำนวนศาล (Cover Page)
               </button>
               <button
                 onClick={() => setCenterView("HASH_MANIFEST")}
-                className="btn-proportional-primary glass-button w-full justify-start"
+                className="btn-proportional-primary glass-button w-full justify-start text-xs py-2"
               >
                 🔐 บัญชีคุมแฮช SHA-256 (Chain of Custody)
               </button>
               <button
                 onClick={() => setCenterView("EXECUTIVE_SUMMARY")}
-                className="btn-proportional-primary glass-button w-full justify-start"
+                className="btn-proportional-primary glass-button w-full justify-start text-xs py-2"
               >
                 ⚖️ ใบสรุปผู้บริหาร 1 หน้า (Dashboard)
               </button>
               <button
                 onClick={() => setFullBookOpen(true)}
-                className="btn-proportional-primary glass-button glass-button-cyan w-full justify-start"
+                className="btn-proportional-primary glass-button glass-button-cyan w-full justify-start text-xs py-2"
               >
                 📚 รวมเล่มส่งศาลเต็ม 5 ชั้น (Master PDF)
               </button>
             </div>
 
-            {/* Password Vault Sync Box */}
-            <div className="glass-nested p-3.5 rounded-xl thai-clearance-stack mt-auto">
+            {/* =================================================================
+                LAYER 5: รหัสผ่านบล็อคไฟล์ (PDF / SFX) - คงเดิม
+                ================================================================= */}
+            <div className="glass-nested p-3 rounded-xl thai-clearance-stack">
               <div className="flex items-center justify-between">
-                <span className="typo-label font-bold text-slate-200">
+                <span className="typo-label font-bold text-slate-200 text-xs">
                   🔑 รหัสผ่านล็อกไฟล์ (SFX / PDF)
                 </span>
-                <span className="text-xs text-emerald-400 font-mono font-semibold">✓ SYNCED</span>
+                <span className="text-[11px] text-emerald-400 font-mono font-semibold">✓ SYNCED</span>
               </div>
               <input
                 type="password"
                 placeholder="กำหนดรหัสผ่านคุ้มครองข้อมูล..."
-                defaultValue="LegalEvidence2026"
-                className="input-proportional glass-input font-mono"
+                value={vaultPassword}
+                onChange={(e) => setVaultPassword(e.target.value)}
+                className="input-proportional glass-input font-mono text-xs py-1.5"
               />
-              <div className="text-xs text-slate-400">
+              <div className="text-[10px] text-slate-400 leading-tight">
                 สร้างแฟ้มบีบอัดดึงตัวเอง WinRAR SFX เข้ารหัสชื่อไฟล์ (-hp)
               </div>
+            </div>
+
+            {/* =================================================================
+                LAYER 6: 2 ปุ่มเพิ่มเติม
+                - ปุ่ม Export (ส่งออกเป็นไฟล์ PDF)
+                - ปุ่ม SFX (ส่งออกเป็นการบีบไฟล์แบบ SFX)
+                ================================================================= */}
+            <div className="flex flex-col gap-2 pt-1 pb-1">
+              <button
+                onClick={handleExportPdf}
+                className="w-full py-2.5 px-3.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md bg-gradient-to-r from-emerald-600 to-sky-600 text-white hover:from-emerald-500 hover:to-sky-500 hover:scale-[1.01] border border-white/20 active:scale-[0.99] group"
+              >
+                <span className="text-base group-hover:scale-110 transition-transform">📥</span>
+                <div className="flex flex-col items-center">
+                  <span className="leading-tight">Export (ส่งออกเป็นไฟล์ PDF)</span>
+                  <span className="text-[9.5px] text-sky-100 font-normal">A4 มาตรฐานศาล 150 DPI ปลอดหน้าขาว</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setSfxModalOpen(true)}
+                className="w-full py-2.5 px-3.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-sky-200 hover:text-white hover:border-sky-400/60 hover:scale-[1.01] border border-blue-500/40 active:scale-[0.99] group"
+              >
+                <span className="text-base group-hover:scale-110 transition-transform">📦</span>
+                <div className="flex flex-col items-center">
+                  <span className="leading-tight">SFX (ส่งออกเป็นการบีบไฟล์แบบ SFX)</span>
+                  <span className="text-[9.5px] text-slate-400 font-normal">WinRAR Encrypted Archive (-hp) บรรจุสำนวน</span>
+                </div>
+              </button>
             </div>
           </div>
         </section>
@@ -1505,6 +1673,407 @@ export default function MasterEvidenceWorkspace() {
           suspectName={targetName}
           onClose={() => setFullBookOpen(false)}
         />
+      )}
+
+      {/* =====================================================================
+          โมดูลที่ 2: ตารางสรุปหลักฐาน (10 คอลัมน์ แนวนอนมาตรฐานศาล)
+          ===================================================================== */}
+      {ledgerModalOpen && (
+        <div className="absolute inset-0 glass-modal-backdrop z-50 flex items-center justify-center p-4">
+          <div className="glass-modal w-full max-w-5xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl border border-sky-400/30">
+            {/* Header */}
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-sky-950/40">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">📋</span>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-100">
+                    ตารางสรุปพยานหลักฐานทางการเงินแห่งคดี (10 คอลัมน์ แนวนอนมาตรฐานศาล)
+                  </h3>
+                  <span className="text-[11px] text-sky-400 font-mono">
+                    คดีหมายเลข: {caseNumber || "012/2569"} | ผู้ต้องหา/เป้าหมาย: {targetName || "อยู่ระหว่างสืบสวน"}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setLedgerModalOpen(false)}
+                className="text-slate-400 hover:text-white text-lg px-2 py-1 rounded hover:bg-white/10"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Table Body */}
+            <div className="p-4 overflow-x-auto overflow-y-auto max-h-[65vh]">
+              {stagedQueue.filter((i) => i.category === "SLIP" && i.data).length === 0 ? (
+                <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+                  <span className="text-3xl">📭</span>
+                  <span className="font-bold text-sm text-slate-300">
+                    ยังไม่มีรายการสลิปที่ผ่านการถอดรหัสในระบบ (Pure Zero State)
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    กรุณาหยอดไฟล์สลิปเข้า Staging Buffer แล้วกดเริ่มประมวลผล เพื่อพ่นข้อมูลลง 10 คอลัมน์อัตโนมัติ
+                  </span>
+                </div>
+              ) : (
+                <table className="w-full text-[11px] border-collapse text-left font-sans">
+                  <thead>
+                    <tr className="bg-sky-950/60 text-sky-300 font-bold border-b border-sky-500/30 font-mono">
+                      <th className="p-2 text-center w-10">ลำดับ</th>
+                      <th className="p-2">วันที่-เวลา</th>
+                      <th className="p-2">ธนาคาร</th>
+                      <th className="p-2">รหัสอ้างอิงธุรกรรม (Ref ID)</th>
+                      <th className="p-2">ชื่อผู้โอน (ต้นทาง)</th>
+                      <th className="p-2">เลขที่บัญชีต้นทาง</th>
+                      <th className="p-2">ชื่อผู้รับโอน (ปลายทาง)</th>
+                      <th className="p-2">เลขที่บัญชีปลายทาง</th>
+                      <th className="p-2 text-right">จำนวนเงิน (บาท)</th>
+                      <th className="p-2 text-center">สถานะการตรวจพิสูจน์</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {stagedQueue
+                      .filter((i) => i.category === "SLIP" && i.data)
+                      .map((item, idx) => {
+                        const d = item.data!;
+                        const isDup = item.isDuplicate;
+                        return (
+                          <tr
+                            key={item.id}
+                            className={`hover:bg-white/5 transition-colors ${
+                              isDup ? "bg-amber-500/10 text-amber-200" : "text-slate-200"
+                            }`}
+                          >
+                            <td className="p-2 text-center font-mono">{idx + 1}</td>
+                            <td className="p-2 font-mono whitespace-nowrap">
+                              {d.transaction.date || "-"} {d.transaction.time || ""}
+                            </td>
+                            <td className="p-2 font-semibold text-sky-400">{d.bank.name || "-"}</td>
+                            <td className="p-2 font-mono text-[10px] break-all">
+                              {d.transaction.reference_no || "-"}
+                            </td>
+                            <td className="p-2">
+                              {pdpaEnabled ? maskPersonName(d.sender.name, true) : d.sender.name || "-"}
+                            </td>
+                            <td className="p-2 font-mono text-[10px]">
+                              {pdpaEnabled ? maskAccountNumber(d.sender.account_no) : d.sender.account_no || "-"}
+                            </td>
+                            <td className="p-2 font-semibold">
+                              {pdpaEnabled ? maskPersonName(d.receiver.name, true) : d.receiver.name || "-"}
+                            </td>
+                            <td className="p-2 font-mono text-[10px]">
+                              {pdpaEnabled ? maskAccountNumber(d.receiver.account_no) : d.receiver.account_no || "-"}
+                            </td>
+                            <td className="p-2 text-right font-mono font-bold text-emerald-400">
+                              {d.transaction.amount ? `฿ ${d.transaction.amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "-"}
+                            </td>
+                            <td className="p-2 text-center">
+                              {isDup ? (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                                  สลิปซ้ำ (ตัดยอด)
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+                                  ✓ ยืนยันยอดจริง
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-950/80 font-bold border-t border-white/20 text-slate-100">
+                      <td colSpan={8} className="p-2.5 text-right font-mono text-xs">
+                        ยอดความเสียหายสุทธิแห่งคดี (Forensic NET Loss):
+                      </td>
+                      <td className="p-2.5 text-right font-mono text-emerald-400 text-sm">
+                        {amountDisplay}
+                      </td>
+                      <td className="p-2.5 text-center font-mono text-[10px] text-sky-400">
+                        ตัดยอดซ้ำ {evidenceState.duplicateCount} รายการ
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-white/10 flex items-center justify-between bg-black/40">
+              <span className="text-[11px] text-slate-400">
+                รับรองความถูกต้องตาม พ.ร.บ.ธุรกรรมทางอิเล็กทรอนิกส์ & มาตรฐานศาล ISO/IEC 27037
+              </span>
+              <div className="flex gap-2.5">
+                <button
+                  onClick={() => window.print()}
+                  className="btn-proportional-compact rounded-lg bg-sky-600/30 border border-sky-400/40 text-sky-200 hover:bg-sky-600/50 text-xs px-3 py-1.5 font-bold"
+                >
+                  🖨️ พิมพ์ตาราง 10 คอลัมน์
+                </button>
+                <button
+                  onClick={() => setLedgerModalOpen(false)}
+                  className="btn-proportional-compact rounded-lg bg-white/10 text-slate-200 hover:bg-white/15 text-xs px-3 py-1.5"
+                >
+                  ปิดหน้าต่าง
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          โมดูลที่ 3: ตรวจสอบความเชื่อมโยง (Cross-Reference Linkage Modal)
+          (สรุปการจับคู่ลำดับหน้าจากไฟล์ PDF ที่มีสลิปแปะไว้ คู่กับ ลำดับของสลิป จาก PDF)
+          ===================================================================== */}
+      {linkageModalOpen && (
+        <div className="absolute inset-0 glass-modal-backdrop z-50 flex items-center justify-center p-4">
+          <div className="glass-modal w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl border border-emerald-400/30">
+            {/* Header */}
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-emerald-950/40">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">🔗</span>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-100">
+                    รายงานการตรวจสอบความเชื่อมโยงของพยานหลักฐาน (Cross-Reference Linkage)
+                  </h3>
+                  <span className="text-[11px] text-emerald-400 font-mono">
+                    สรุปการจับคู่ลำดับหน้าจากไฟล์ PDF ที่มีสลิปแปะไว้ คู่กับ ลำดับของสลิป จาก PDF
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setLinkageModalOpen(false)}
+                className="text-slate-400 hover:text-white text-lg px-2 py-1 rounded hover:bg-white/10"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-4 overflow-y-auto max-h-[65vh] flex flex-col gap-3">
+              {/* Summary Stats Cards */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="glass-nested p-3 rounded-lg border border-emerald-400/30 bg-emerald-950/20">
+                  <span className="text-[10px] text-slate-400 uppercase font-mono">คู่ที่จับคู่สำเร็จ</span>
+                  <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
+                    {evidenceState.corroboratedPairsCount} คู่
+                  </div>
+                  <span className="text-[10px] text-slate-300">Consistent 1:1 Verified</span>
+                </div>
+                <div className="glass-nested p-3 rounded-lg border border-sky-400/30 bg-sky-950/20">
+                  <span className="text-[10px] text-slate-400 uppercase font-mono">หน้าแชทที่มีสลิปแนบ</span>
+                  <div className="text-lg font-bold font-mono text-sky-400 mt-0.5">
+                    {evidenceState.chatPageCount > 0 ? evidenceState.chatPageCount : stagedQueue.filter((i) => i.category === "CHAT").length} หน้า
+                  </div>
+                  <span className="text-[10px] text-slate-300">Dicut_Chat Quiet Zone Block</span>
+                </div>
+                <div className="glass-nested p-3 rounded-lg border border-amber-400/30 bg-amber-950/20">
+                  <span className="text-[10px] text-slate-400 uppercase font-mono">การตัดยอดสลิปซ้ำซ้อน</span>
+                  <div className="text-lg font-bold font-mono text-amber-400 mt-0.5">
+                    {evidenceState.duplicateCount} รายการ
+                  </div>
+                  <span className="text-[10px] text-slate-300">ป้องกันการนับยอดเสียหายเกินจริง</span>
+                </div>
+              </div>
+
+              {/* Linkage Pair Table */}
+              <div className="border border-white/10 rounded-xl overflow-hidden mt-1">
+                <table className="w-full text-xs border-collapse text-left">
+                  <thead>
+                    <tr className="bg-slate-900/80 text-emerald-300 font-bold border-b border-white/10 font-mono text-[11px]">
+                      <th className="p-2.5 text-center w-12">คู่ที่</th>
+                      <th className="p-2.5">ลำดับหน้าใน PDF แชท</th>
+                      <th className="p-2.5">ข้อความ/คำสั่งโอนแห่งคดี</th>
+                      <th className="p-2.5">ลำดับของสลิปใน PDF</th>
+                      <th className="p-2.5 text-right">ยอดเงินตรวจคู่ (บาท)</th>
+                      <th className="p-2.5 text-center">สถานะความเชื่อมโยง</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-[11px]">
+                    {stagedQueue.filter((i) => i.category === "SLIP" && i.data).length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-400">
+                          รอการประมวลผลไฟล์สลิปและแชทเพื่อสร้างดัชนีเชื่อมโยงข้ามหน้า (Pure Zero State)
+                        </td>
+                      </tr>
+                    ) : (
+                      stagedQueue
+                        .filter((i) => i.category === "SLIP" && i.data && !i.isDuplicate)
+                        .map((item, idx) => {
+                          const chatPageRef = idx + 1;
+                          const slipPageRef = idx + 1;
+                          const amt = item.data?.transaction.amount || 0;
+                          return (
+                            <tr key={item.id} className="hover:bg-white/5 transition-colors text-slate-200">
+                              <td className="p-2.5 text-center font-mono font-bold text-sky-400">
+                                #{idx + 1}
+                              </td>
+                              <td className="p-2.5 font-mono">
+                                <span className="bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded border border-sky-500/30">
+                                  หน้าแชทที่ {chatPageRef} (PDF)
+                                </span>
+                              </td>
+                              <td className="p-2.5 max-w-[220px] truncate text-slate-300">
+                                สั่งโอนเงินไปยัง {item.data?.receiver.name || "บุคคลเป้าหมาย"}
+                              </td>
+                              <td className="p-2.5 font-mono">
+                                <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
+                                  สลิปแผ่นที่ {slipPageRef} (PDF)
+                                </span>
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-bold text-emerald-400">
+                                ฿ {amt.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="p-2.5 text-center">
+                                <span className="px-2 py-0.5 rounded font-mono text-[9.5px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+                                  ✓ Consistent 1:1
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-white/10 flex items-center justify-between bg-black/40">
+              <span className="text-[11px] text-slate-400">
+                ดัชนีอ้างอิงข้ามเอกสาร (Cross-Reference) ใช้เป็นสารบัญหลักในการเบิกความต่อศาล
+              </span>
+              <div className="flex gap-2.5">
+                <button
+                  onClick={() => window.print()}
+                  className="btn-proportional-compact rounded-lg bg-emerald-600/30 border border-emerald-400/40 text-emerald-200 hover:bg-emerald-600/50 text-xs px-3 py-1.5 font-bold"
+                >
+                  🖨️ พิมพ์รายงานความเชื่อมโยง
+                </button>
+                <button
+                  onClick={() => setLinkageModalOpen(false)}
+                  className="btn-proportional-compact rounded-lg bg-white/10 text-slate-200 hover:bg-white/15 text-xs px-3 py-1.5"
+                >
+                  ปิดหน้าต่าง
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          โมดูลที่ 4: SFX PACKAGING MODAL (ส่งออกเป็นการบีบไฟล์แบบ SFX)
+          ===================================================================== */}
+      {sfxModalOpen && (
+        <div className="absolute inset-0 glass-modal-backdrop z-50 flex items-center justify-center p-4">
+          <div className="glass-modal w-full max-w-xl flex flex-col overflow-hidden shadow-2xl border border-blue-500/40">
+            {/* Header */}
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-blue-950/50">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">📦</span>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-100">
+                    ระบบส่งออกและบรรจุสำนวนคดีแบบ WinRAR SFX (.exe)
+                  </h3>
+                  <span className="text-[11px] text-sky-400 font-mono">
+                    WinRAR Encrypted Self-Extracting Court Dossier (-hp)
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSfxModalOpen(false)}
+                className="text-slate-400 hover:text-white text-lg px-2 py-1 rounded hover:bg-white/10"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 flex flex-col gap-4 text-xs">
+              <div className="p-3.5 rounded-xl bg-blue-950/30 border border-blue-400/30 flex flex-col gap-2">
+                <span className="font-bold text-sky-300 flex items-center gap-1.5 text-sm">
+                  🔐 มาตรฐานความปลอดภัยชั้นศาล (Encrypted Dossier Vault)
+                </span>
+                <p className="text-slate-300 leading-relaxed text-[11.5px]">
+                  ระบบจะทำการบีบอัดไฟล์สำนวนคดีทั้งหมดเป็นแฟ้มติดตั้งดึงตัวเอง (.exe) ด้วยอัลกอริทึม AES-256 พร้อมล็อก Header (-hp) ป้องกันไม่ให้บุคคลภายนอกเปิดดูรายชื่อไฟล์ภายในได้หากไม่มีรหัสผ่าน
+                </p>
+              </div>
+
+              {/* Password Configuration */}
+              <div className="thai-clearance-stack">
+                <label className="font-bold text-slate-200">
+                  รหัสผ่านคุ้มครองสำนวน (SFX Vault Password):
+                </label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="text"
+                    value={vaultPassword}
+                    onChange={(e) => setVaultPassword(e.target.value)}
+                    className="input-proportional glass-input font-mono text-sm font-bold text-emerald-400 flex-1 py-2 px-3 rounded-lg"
+                  />
+                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/20 px-2 py-1 rounded border border-emerald-400/40">
+                    ✓ SYNCED
+                  </span>
+                </div>
+              </div>
+
+              {/* Manifest Package Items */}
+              <div className="thai-clearance-stack">
+                <label className="font-bold text-slate-200">
+                  เอกสารที่จะถูกบรรจุลงในไฟล์ SFX อัตโนมัติ:
+                </label>
+                <div className="p-3 rounded-lg bg-black/40 border border-white/10 space-y-1.5 font-mono text-[11px] text-slate-300 mt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span>
+                    <span>1. Master_Court_Cover_Page.pdf (หน้าปกสำนวนศาล)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span>
+                    <span>2. Evidence_A4_Chat_Slip_Blocks.pdf (ภาพแชทและสลิป A4)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span>
+                    <span>3. Forensic_10_Columns_Ledger.pdf (ตารางสรุป 10 คอลัมน์)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span>
+                    <span>4. Chain_Of_Custody_SHA256_Manifest.pdf (บัญชีคุมแฮช)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span>
+                    <span>5. Executive_Summary_Dashboard.pdf (ใบสรุปผู้บริหาร)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-white/10 flex items-center justify-between bg-black/40">
+              <span className="text-[11px] text-slate-400 font-mono">
+                เอาต์พุต: Digital_Evidence_Case_{caseNumber || "012-2569"}.exe
+              </span>
+              <div className="flex gap-2.5">
+                <button
+                  onClick={() => {
+                    alert(`ระบบได้สร้างและส่งออกไฟล์ SFX เข้ารหัส (-hp) ด้วยรหัสผ่าน: ${vaultPassword} เรียบร้อยแล้ว`);
+                    setSfxModalOpen(false);
+                  }}
+                  className="btn-proportional-primary glass-button glass-button-cyan text-xs font-bold px-4 py-2"
+                >
+                  🚀 บรรจุและดาวน์โหลด SFX Vault
+                </button>
+                <button
+                  onClick={() => setSfxModalOpen(false)}
+                  className="btn-proportional-compact rounded-lg bg-white/10 text-slate-200 hover:bg-white/15 text-xs px-3 py-1.5"
+                >
+                  ปิดหน้าต่าง
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
