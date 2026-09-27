@@ -80,7 +80,7 @@ export default function MasterEvidenceWorkspace() {
   const [legalContextModalOpen, setLegalContextModalOpen] = useState(false);
   const [legalSearchQuery, setLegalSearchQuery] = useState("");
   const [legalCategoryFilter, setLegalCategoryFilter] = useState<"ALL" | "CIVIL" | "CRIMINAL">("ALL");
-  const [vaultPassword, setVaultPassword] = useState("LegalEvidence2026");
+  const [vaultPassword, setVaultPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Pure Zero State (SSOT Bi-Directional State)
@@ -649,12 +649,12 @@ export default function MasterEvidenceWorkspace() {
         },
         sfx_vault: {
           enabled: true,
-          archive_name: "Dossier_Encrypted.exe",
-          is_password_protected: true,
+          archive_name: vaultPassword.trim() ? "Dossier_Encrypted.exe" : "Dossier_Standard.exe",
+          is_password_protected: !!vaultPassword.trim(),
         },
       },
     };
-  }, [caseNumber, evidenceState, targetName, pdpaEnabled]);
+  }, [caseNumber, evidenceState, targetName, pdpaEnabled, vaultPassword]);
 
   const amountDisplay = evidenceState.totalNetLoss > 0
     ? `฿ ${evidenceState.totalNetLoss.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`
@@ -1523,24 +1523,40 @@ export default function MasterEvidenceWorkspace() {
             </div>
 
             {/* =================================================================
-                LAYER 5: รหัสผ่านบล็อคไฟล์ (PDF / SFX) - คงเดิม
+                LAYER 5: รหัสผ่านล็อกไฟล์ (PDF / SFX)
                 ================================================================= */}
             <div className="glass-nested p-3 rounded-xl thai-clearance-stack">
               <div className="flex items-center justify-between">
                 <span className="typo-label font-bold text-slate-200 text-xs">
                   🔑 รหัสผ่านล็อกไฟล์ (SFX / PDF)
                 </span>
-                <span className="text-[11px] text-emerald-400 font-mono font-semibold">✓ SYNCED</span>
+                {vaultPassword.trim() ? (
+                  <span className="text-[10px] text-emerald-400 font-mono font-semibold flex items-center gap-1 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                    🔒 ENCRYPTED
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 font-mono font-semibold flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
+                    🔓 NO PASSWORD
+                  </span>
+                )}
               </div>
               <input
                 type="password"
-                placeholder="กำหนดรหัสผ่านคุ้มครองข้อมูล..."
+                placeholder="เว้นว่าง = ไม่ตั้งรหัสผ่าน (เปิดอ่านได้ทันที)"
                 value={vaultPassword}
                 onChange={(e) => setVaultPassword(e.target.value)}
                 className="input-proportional glass-input font-mono text-xs py-1.5"
               />
               <div className="text-[10px] text-slate-400 leading-tight">
-                สร้างแฟ้มบีบอัดดึงตัวเอง WinRAR SFX เข้ารหัสชื่อไฟล์ (-hp)
+                {vaultPassword.trim() ? (
+                  <span className="text-emerald-300">
+                    นำรหัสนี้ไปล็อกคุ้มครองทั้งไฟล์ PDF และ WinRAR SFX (-hp)
+                  </span>
+                ) : (
+                  <span>
+                    ไม่มีการล็อกรหัส — ไฟล์ PDF และแฟ้มบีบอัด SFX สามารถเปิดอ่านได้ทันที
+                  </span>
+                )}
               </div>
             </div>
 
@@ -1750,6 +1766,7 @@ export default function MasterEvidenceWorkspace() {
           manifestEntries={manifestList}
           caseNumber={caseNumber}
           suspectName={targetName}
+          vaultPassword={vaultPassword}
           onClose={() => setFullBookOpen(false)}
         />
       )}
@@ -2082,19 +2099,48 @@ export default function MasterEvidenceWorkspace() {
 
               {/* Password Configuration */}
               <div className="thai-clearance-stack">
-                <label className="font-bold text-slate-200">
-                  รหัสผ่านคุ้มครองสำนวน (SFX Vault Password):
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-200">
+                    รหัสผ่านคุ้มครองสำนวน (SFX Vault & PDF Password):
+                  </label>
+                  {vaultPassword.trim() ? (
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-400/40 font-semibold">
+                      🔒 ล็อกรหัสผ่าน (-hp)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono text-slate-400 bg-white/10 px-2 py-0.5 rounded border border-white/15">
+                      🔓 ไม่ล็อกรหัสผ่าน
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 mt-1">
                   <input
                     type="text"
                     value={vaultPassword}
                     onChange={(e) => setVaultPassword(e.target.value)}
-                    className="input-proportional glass-input font-mono text-sm font-bold text-emerald-400 flex-1 py-2 px-3 rounded-lg"
+                    placeholder="เว้นว่าง = ไม่ตั้งรหัสผ่าน (เปิดอ่านและแตกไฟล์ได้ทันที)"
+                    className="input-proportional glass-input font-mono text-sm font-bold text-emerald-400 flex-1 py-2 px-3 rounded-lg placeholder:font-normal placeholder:text-slate-500 placeholder:text-xs"
                   />
-                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/20 px-2 py-1 rounded border border-emerald-400/40">
-                    ✓ SYNCED
-                  </span>
+                  {vaultPassword.trim() && (
+                    <button
+                      onClick={() => setVaultPassword("")}
+                      className="px-2.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-mono shrink-0 transition-colors"
+                      title="ล้างรหัสผ่าน (ไม่ล็อกรหัส)"
+                    >
+                      ล้างรหัส
+                    </button>
+                  )}
+                </div>
+                <div className="text-[10.5px] mt-1">
+                  {vaultPassword.trim() ? (
+                    <span className="text-emerald-300">
+                      ✓ แฟ้ม WinRAR SFX และเอกสาร PDF จะถูกล็อกด้วยรหัส: <strong className="font-mono text-white underline">{vaultPassword.trim()}</strong>
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">
+                      ℹ️ เว้นว่างไว้: แฟ้ม SFX และเอกสาร PDF ภายในจะไม่มีรหัสผ่าน สามารถดับเบิลคลิกเปิดอ่านได้ทันที
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -2136,12 +2182,16 @@ export default function MasterEvidenceWorkspace() {
               <div className="flex gap-2.5">
                 <button
                   onClick={() => {
-                    alert(`ระบบได้สร้างและส่งออกไฟล์ SFX เข้ารหัส (-hp) ด้วยรหัสผ่าน: ${vaultPassword} เรียบร้อยแล้ว`);
+                    if (vaultPassword.trim()) {
+                      alert(`ระบบได้สร้างและส่งออกไฟล์ SFX เข้ารหัส (-hp) พร้อมผูกรหัสผ่าน PDF ด้วยรหัส:\n"${vaultPassword.trim()}" เรียบร้อยแล้ว`);
+                    } else {
+                      alert("ระบบได้สร้างและส่งออกไฟล์ SFX สำนวนคดีแบบเปิดทันที (ไม่มีรหัสผ่าน) เรียบร้อยแล้ว");
+                    }
                     setSfxModalOpen(false);
                   }}
                   className="btn-proportional-primary glass-button glass-button-cyan text-xs font-bold px-4 py-2"
                 >
-                  🚀 บรรจุและดาวน์โหลด SFX Vault
+                  🚀 {vaultPassword.trim() ? "บรรจุและดาวน์โหลด SFX (เข้ารหัส)" : "บรรจุและดาวน์โหลด SFX (ไม่มีรหัส)"}
                 </button>
                 <button
                   onClick={() => setSfxModalOpen(false)}

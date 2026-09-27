@@ -140,8 +140,12 @@ export default function CourtCoverSheet({ data }: Props) {
 
                 {active_cards.sfx_vault?.enabled && (
                   <div className="flex justify-between pl-3 text-slate-700 py-0.5">
-                    <span>+ แฟ้มสำนวนดิจิทัลเข้ารหัส WinRAR SFX (.exe) คุ้มครองความปลอดภัย (-hp)</span>
-                    <span className="font-mono text-sky-700 font-semibold">แนบแฟ้มสำเร็จรูป</span>
+                    <span>
+                      + แฟ้มสำนวนดิจิทัล WinRAR SFX (.exe) {active_cards.sfx_vault.is_password_protected ? "เข้ารหัสคุ้มครองความปลอดภัย (-hp)" : "(แบบเปิดทันที ไม่มีรหัสผ่าน)"}
+                    </span>
+                    <span className="font-mono text-sky-700 font-semibold">
+                      {active_cards.sfx_vault.is_password_protected ? "แนบแฟ้มเข้ารหัส 🔒" : "แนบแฟ้มสำเร็จรูป 🔓"}
+                    </span>
                   </div>
                 )}
               </div>

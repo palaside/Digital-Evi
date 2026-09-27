@@ -24,6 +24,7 @@ interface Props {
   suspectName?: string;
   investigatorName?: string;
   investigatorPosition?: string;
+  vaultPassword?: string;
   onClose?: () => void;
   onJumpToSection?: (section: string) => void;
 }
@@ -38,6 +39,7 @@ export default function MasterDossierFullBook({
   suspectName,
   investigatorName = "พ.ต.ท. สมศักดิ์ นิติการ",
   investigatorPosition = "สารวัตรสอบสวน (กลุ่มงานพิสูจน์หลักฐานดิจิทัล)",
+  vaultPassword = "",
   onClose,
   onJumpToSection,
 }: Props) {
@@ -83,6 +85,15 @@ export default function MasterDossierFullBook({
 
         {/* Action Controls */}
         <div className="flex items-center gap-3">
+          {vaultPassword?.trim() ? (
+            <span className="text-[11px] font-mono text-emerald-300 bg-emerald-500/20 px-2.5 py-1 rounded-lg border border-emerald-400/40 flex items-center gap-1.5 font-semibold">
+              🔒 PDF LOCKED: {vaultPassword.trim()}
+            </span>
+          ) : (
+            <span className="text-[11px] font-mono text-slate-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/10 flex items-center gap-1.5">
+              🔓 UNENCRYPTED PDF (ไม่มีรหัสผ่าน)
+            </span>
+          )}
           <button
             onClick={handlePrint}
             className="btn-proportional-primary glass-button glass-button-cyan text-xs"
