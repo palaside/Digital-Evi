@@ -8,6 +8,11 @@ import CourtCoverSheet from "@/components/CourtCoverSheet";
 import ExecutiveSummarySheet from "@/components/ExecutiveSummarySheet";
 import HashManifestTable from "@/components/HashManifestTable";
 import { LEGAL_DISCLAIMER_LINES } from "@/constants/forensic-ssot";
+import {
+  resolveHeaderMode,
+  resolveHeaderCorroborated,
+  resolveHeaderPageNumber,
+} from "@/utils/forensic-header-machine";
 
 interface Props {
   coverData: CourtCoverSheetData;
@@ -43,6 +48,18 @@ export default function MasterDossierFullBook({
   const handlePrint = () => {
     window.print();
   };
+
+  const nowFormatted = new Date().toLocaleDateString("en-GB") + " : " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+
+  const evidenceCorroboration = resolveHeaderCorroborated({
+    type: "SLIP",
+    itemIndex: 1,
+    targetName: suspectName || evidenceState.poiName,
+    amount: extractedSlip?.transaction?.amount || evidenceState.totalNetLoss,
+    isDuplicate: false,
+    chatHasSlip: evidenceState.slipCount > 0,
+    slipPageRef: 1,
+  });
 
   return (
     <div className="fixed inset-0 z-50 bg-[#070a0f]/95 backdrop-blur-xl flex flex-col overflow-hidden select-text text-slate-100">
@@ -200,21 +217,36 @@ export default function MasterDossierFullBook({
           style={{ fontFamily: "'Sarabun', sans-serif" }}
         >
           <div>
-            <div className="border-b-2 border-slate-900 pb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-3xl">🧾</span>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    แผ่นพยานหลักฐานสลิปโอนเงิน (slip-block-fit)
-                  </h3>
-                  <p className="text-[10px] text-slate-600">
-                    หลักฐานดิจิทัลจัดวางกึ่งกลางหน้า A4 สมบูรณ์แบบ (645×890 px) รักษาสัดส่วน 100%
-                  </p>
+            {/* Standard Evidence Ribbon Header (Y = 38px to 115px equivalent) */}
+            <div className="bg-[#F8FAFC] border border-[#CBD5E1] rounded p-3 mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <img
+                  src="/LOGO.png"
+                  alt="Emblem"
+                  className="h-12 w-auto object-contain select-none"
+                />
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1.5 text-xs text-[#111827]">
+                    <span className="font-extralight">MODE : </span>
+                    <span className="font-thin font-bold">SLIP</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-[#111827]">
+                    <span className="font-extralight">CORROBORATED : </span>
+                    <span className="font-thin text-[11px] text-[#111827] max-w-[480px] truncate">
+                      {evidenceCorroboration}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <div className="text-right text-xs">
-                <div className="font-mono font-bold text-slate-900">PAGE : 4 / {totalPages}</div>
-                <div className="text-[10px] text-slate-600 font-mono">คดี: {caseNumber}</div>
+
+              <div className="flex flex-col items-end gap-0.5 text-xs text-[#111827]">
+                <div className="flex items-center gap-1">
+                  <span className="font-extralight">PAGE : </span>
+                  <span className="font-thin font-bold font-mono">4 / {totalPages}</span>
+                </div>
+                <span className="font-thin text-[10px] text-slate-500 font-mono">
+                  {nowFormatted}
+                </span>
               </div>
             </div>
 

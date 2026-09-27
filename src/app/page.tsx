@@ -16,6 +16,14 @@ import ExecutiveSummarySheet from "@/components/ExecutiveSummarySheet";
 import MasterDossierFullBook from "@/components/MasterDossierFullBook";
 import { maskAccountNumber, maskPersonName } from "@/utils/privacy-mask";
 import { useSessionPersistence } from "@/hooks/useSessionPersistence";
+import {
+  resolveHeaderMode,
+  resolveHeaderCorroborated,
+  resolveHeaderPageNumber,
+  resolveWebHeaderStatus,
+  fitCanvasText,
+  type EvidencePageType,
+} from "@/utils/forensic-header-machine";
 
 interface ExtractionMetadata {
   file_name: string;
@@ -32,6 +40,25 @@ export default function MasterEvidenceWorkspace() {
   const [evidenceMode, setEvidenceMode] = useState<"CHAT" | "SLIP">("SLIP");
   const [centerView, setCenterView] = useState<CenterViewMode>("EVIDENCE_A4");
   const [fullBookOpen, setFullBookOpen] = useState(false);
+
+  // Real-Time Clock State (Web App Top Header Bar)
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formattedTimeStr = useMemo(() => {
+    return currentTime.toLocaleTimeString("en-GB", { hour12: false });
+  }, [currentTime]);
+
+  const formattedDateStr = useMemo(() => {
+    return currentTime.toLocaleDateString("th-TH", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  }, [currentTime]);
 
   // Persistent States (Component 3: Session Auto-Save & Hydration)
   const [targetName, setTargetName] = useSessionPersistence<string>("poi_target_name", "");
@@ -259,37 +286,100 @@ export default function MasterEvidenceWorkspace() {
     ctx.fillStyle = "#FFFFFF";
     ctx.fillRect(0, 0, a4WidthPx, a4HeightPx);
 
-    // 2. Header Ribbon (Y = 20 - 120 px)
+    // 2. Evidence Ribbon Header (Y = 38 - 115 px, Height = 77px)
+    const ribbonTop = 38;
+    const ribbonHeight = 77;
+    const ribbonLeft = 40;
+    const ribbonWidth = a4WidthPx - 80;
+
+    // Background & Stroke
     ctx.fillStyle = "#F8FAFC";
-    ctx.fillRect(40, 20, a4WidthPx - 80, 100);
+    ctx.fillRect(ribbonLeft, ribbonTop, ribbonWidth, ribbonHeight);
     ctx.strokeStyle = "#CBD5E1";
     ctx.lineWidth = 1;
-    ctx.strokeRect(40, 20, a4WidthPx - 80, 100);
+    ctx.strokeRect(ribbonLeft, ribbonTop, ribbonWidth, ribbonHeight);
 
-    ctx.font = "bold 44px 'Sarabun', sans-serif";
-    ctx.fillStyle = "#0F172A";
-    ctx.textBaseline = "middle";
-    ctx.fillText("🏛️", 55, 70);
+    // Official LOGO Shield in Ribbon
+    const logoImg = new Image();
+    logoImg.src = "/LOGO.png";
+    const drawRibbonContent = () => {
+      if (logoImg.complete && logoImg.naturalWidth > 0) {
+        const logoScale = Math.min(65 / logoImg.naturalHeight, 72 / logoImg.naturalWidth);
+        const lW = logoImg.naturalWidth * logoScale;
+        const lH = logoImg.naturalHeight * logoScale;
+        ctx.drawImage(logoImg, ribbonLeft + 12, ribbonTop + (ribbonHeight - lH) / 2, lW, lH);
+      }
 
-    ctx.font = "bold 20px 'Sarabun', sans-serif";
-    ctx.fillText(`MODE : ${evidenceMode}`, 120, 52);
+      const contentLeft = ribbonLeft + 90;
+      const contentRight = ribbonLeft + ribbonWidth - 20;
 
-    ctx.font = "14px 'Sarabun', sans-serif";
-    ctx.fillStyle = "#475569";
-    const amountStr = evidenceState.totalNetLoss
-      ? `฿ ${evidenceState.totalNetLoss.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`
-      : "PURE ZERO STATE (฿ 0.00)";
-    ctx.fillText(
-      `CORROBORATED : พยานหลักฐานดิจิทัลคดีอาญา | ยอดเงินสุทธิ: ${amountStr} | ${evidenceState.processedAt || "รอรับไฟล์"}`,
-      120,
-      82
-    );
+      // Row 1 (Y = ribbonTop + 30): MODE (Left) | PAGE (Right)
+      const pageType: EvidencePageType = previewImage ? evidenceMode : "STANDBY";
+      const modeLabel = "MODE : ";
+      const modeValue = resolveHeaderMode(pageType);
 
-    ctx.font = "bold 16px 'JetBrains Mono', monospace";
-    ctx.fillStyle = "#0F172A";
-    ctx.textAlign = "right";
-    ctx.fillText("PAGE : 1 / 1", a4WidthPx - 60, 70);
-    ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.font = "200 17pt 'Sarabun', sans-serif";
+      ctx.fillStyle = "#111827";
+      ctx.fillText(modeLabel, contentLeft, ribbonTop + 30);
+      const modeLblW = ctx.measureText(modeLabel).width;
+
+      ctx.font = "100 17pt 'Sarabun', sans-serif";
+      ctx.fillText(modeValue, contentLeft + modeLblW, ribbonTop + 30);
+
+      // Page Number (Right aligned)
+      const totalPages = Math.max(1, evidenceState.slipCount + evidenceState.chatPageCount);
+      const pageLabel = "PAGE : ";
+      const pageValue = resolveHeaderPageNumber(selectedItemIndex + 1, totalPages, pageType);
+
+      ctx.font = "100 17pt 'Sarabun', sans-serif";
+      const pageValW = ctx.measureText(pageValue).width;
+      ctx.fillText(pageValue, contentRight - pageValW, ribbonTop + 30);
+
+      ctx.font = "200 17pt 'Sarabun', sans-serif";
+      const pageLblW = ctx.measureText(pageLabel).width;
+      ctx.fillText(pageLabel, contentRight - pageValW - pageLblW, ribbonTop + 30);
+
+      // Row 2 (Y = ribbonTop + 62): CORROBORATED (Left) | Timestamp (Right)
+      const activeItem = evidenceQueue[selectedItemIndex];
+      const corroborationText = resolveHeaderCorroborated({
+        type: pageType,
+        itemIndex: selectedItemIndex + 1,
+        targetName: pdpaEnabled
+          ? maskPersonName(targetName || evidenceState.poiName, true)
+          : targetName || evidenceState.poiName,
+        amount: activeItem?.data?.transaction.amount || evidenceState.totalNetLoss,
+        isDuplicate: false,
+        chatHasSlip: evidenceState.slipCount > 0,
+        slipPageRef: 1,
+      });
+
+      const corroLabel = "CORROBORATED : ";
+      ctx.font = "200 17pt 'Sarabun', sans-serif";
+      ctx.fillStyle = "#111827";
+      ctx.fillText(corroLabel, contentLeft, ribbonTop + 62);
+      const corroLblW = ctx.measureText(corroLabel).width;
+
+      // Date/Time on Right of Row 2: DD/MM/YYYY : HH.MM
+      const dateFormatted = `${currentTime.toLocaleDateString("en-GB")} : ${currentTime.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+      ctx.font = "100 13pt 'Sarabun', sans-serif";
+      ctx.fillStyle = "#475569";
+      const dateW = ctx.measureText(dateFormatted).width;
+      ctx.fillText(dateFormatted, contentRight - dateW, ribbonTop + 62);
+
+      // Dynamic Shrink-to-Fit for Corroborated Value (Max width calculation)
+      const maxCorroW = (contentRight - dateW - 25) - (contentLeft + corroLblW);
+      const fitted = fitCanvasText(ctx, corroborationText, maxCorroW, 17, 10, "'Sarabun', sans-serif", "100");
+      ctx.font = `100 ${fitted.fontSize}pt 'Sarabun', sans-serif`;
+      ctx.fillStyle = "#111827";
+      ctx.fillText(corroborationText, contentLeft + corroLblW, ribbonTop + 62);
+    };
+
+    if (logoImg.complete) {
+      drawRibbonContent();
+    } else {
+      logoImg.onload = () => drawRibbonContent();
+    }
 
     // 3. Evidence Block
     if (previewImage) {
@@ -395,92 +485,153 @@ export default function MasterEvidenceWorkspace() {
   return (
     <div className="app-fit-shell bg-transparent text-slate-100 select-none">
       {/* -----------------------------------------------------------------------
-          HEADER TIER (ความสูง 108px, PDPA Shield Toggle, ISO/IEC 27037)
+          WEB APP TOP HEADER BAR (108px Fixed Height, 3-Zone Architecture)
           ----------------------------------------------------------------------- */}
-      <header className="h-[108px] min-h-[108px] shrink-0 px-6 glass-header border-b border-white/10 z-30 flex items-center justify-between">
+      <header
+        className="h-[108px] min-h-[108px] max-h-[108px] shrink-0 px-[28px] glass-header border-b border-white/[0.22] z-30 flex items-center justify-between select-none"
+        style={{ height: "108px", minHeight: "108px", maxHeight: "108px", padding: "0 28px" }}
+      >
+        {/* =====================================================================
+            HEADER LEFT: Logo Shield & Title Block
+            ===================================================================== */}
         <div className="flex items-center gap-4 h-full py-2">
-          {/* Logo & Graphic Fit */}
-          <div className="flex items-center gap-3.5 h-full">
-            <img
-              src="/LOGO.png"
-              alt="Digital Evidence Forensic Emblem"
-              className="h-[76px] w-auto max-h-[82px] object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] select-none cursor-pointer hover:scale-105 transition-transform"
-            />
-            <div className="flex flex-col gap-1 leading-tight">
-              <span className="font-bold tracking-tight text-xl leading-tight bg-gradient-to-r from-sky-400 via-teal-300 to-emerald-400 bg-clip-text text-transparent">
-                DIGITAL EVIDENCE FORENSIC SUITE
+          {/* Logo Shield: Max 92px height fit */}
+          <img
+            src="/LOGO.png"
+            alt="Digital Evidence Forensic Shield"
+            className="h-[calc(100%-16px)] max-h-[92px] w-auto object-contain drop-shadow-[0_4px_14px_rgba(0,0,0,0.6)] cursor-pointer hover:scale-105 transition-transform"
+          />
+
+          {/* Title Block */}
+          <div className="flex flex-col gap-[6px] leading-[1.4] justify-center">
+            <div className="flex items-center gap-2.5">
+              <span className="font-bold tracking-tight text-[20px] text-white leading-tight">
+                DIGITAL EVIDENCE
               </span>
-              <span className="text-xs text-slate-300 font-medium leading-none">
-                ระบบวิเคราะห์พยานหลักฐานดิจิทัลคดีอาญา มาตรฐานศาล (ISO/IEC 27037)
+              <span className="badge-proportional glass-badge glass-badge-active font-mono text-[12px] px-2 py-0.5">
+                REVISION 02
               </span>
             </div>
-          </div>
-
-          <span className="badge-proportional glass-badge glass-badge-active font-mono ml-2">
-            REVISION 02
-          </span>
-
-          {/* Dual Mode Switcher */}
-          <div className="flex items-center bg-black/40 p-1.5 rounded-lg border border-white/10 ml-4">
-            <button
-              onClick={() => setEvidenceMode("CHAT")}
-              className={`px-4 py-1.5 text-xs rounded-md font-semibold transition-all ${
-                evidenceMode === "CHAT"
-                  ? "bg-sky-500/20 text-sky-400 border border-sky-400/40 shadow-sm"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              CHAT [แชท]
-            </button>
-            <button
-              onClick={() => setEvidenceMode("SLIP")}
-              className={`px-4 py-1.5 text-xs rounded-md font-semibold transition-all ${
-                evidenceMode === "SLIP"
-                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-400/40 shadow-sm"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              SLIP [สลิป]
-            </button>
-          </div>
-
-          {/* Component 4: PDPA Shield / Privacy Masking Toggle */}
-          <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-lg border border-white/10 ml-2">
-            <span className="text-xs font-medium text-slate-300">🛡️ PDPA Shield</span>
-            <button
-              onClick={() => setPdpaEnabled((p) => !p)}
-              className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors ${
-                pdpaEnabled ? "bg-emerald-500" : "bg-slate-700"
-              }`}
-            >
-              <div
-                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                  pdpaEnabled ? "translate-x-4" : "translate-x-0"
-                }`}
-              />
-            </button>
-            <span className={`text-[10px] font-mono font-bold ${pdpaEnabled ? "text-emerald-400" : "text-slate-500"}`}>
-              {pdpaEnabled ? "ON (MASKED)" : "OFF (FULL)"}
+            <span className="text-[13.5px] text-[#94A3B8] font-medium leading-none">
+              ศูนย์รวบรวมและวิเคราะห์พยานหลักฐานดิจิทัลคดีอาญา (Glassmorphism Certified)
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="badge-proportional glass-badge flex items-center gap-2">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                loading ? "bg-amber-400 animate-ping" : "bg-emerald-400 animate-pulse"
-              }`}
-            ></span>
-            <span className="font-mono text-xs">
-              {loading ? "AI EXTRACTING..." : "ISO/IEC 27037 FORENSIC READY"}
+        {/* =====================================================================
+            HEADER CENTER: Motto Block, Mode Switcher & Status Capsule
+            ===================================================================== */}
+        <div className="flex flex-col items-center gap-1.5 py-1">
+          {/* Motto Block */}
+          <div className="flex flex-col items-center gap-[4px] leading-[1.35] text-center">
+            <span className="text-[13.5px] font-bold text-[#E2E8F0] tracking-wide">
+              จากข้อมูลดิจิทัล สู่ความยุติธรรม
+            </span>
+            <span className="text-[10.5px] text-[#94A3B8] font-mono tracking-[1px] uppercase">
+              DIGITAL EVIDENCE FOR A FAIRER TOMORROW
             </span>
           </div>
+
+          {/* Control Bar: Mode Tabs, Status Capsule & PDPA Shield */}
+          <div className="flex items-center gap-3">
+            {/* Mode Tabs */}
+            <div className="flex items-center bg-black/40 p-1 rounded-lg border border-white/10">
+              <button
+                onClick={() => setEvidenceMode("CHAT")}
+                style={{ padding: "6px 18px", fontSize: "13.5px" }}
+                className={`rounded-md font-semibold transition-all ${
+                  evidenceMode === "CHAT"
+                    ? "bg-sky-500/25 text-sky-300 border border-sky-400/50 shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                CHAT (แชท)
+              </button>
+              <button
+                onClick={() => setEvidenceMode("SLIP")}
+                style={{ padding: "6px 18px", fontSize: "13.5px" }}
+                className={`rounded-md font-semibold transition-all ${
+                  evidenceMode === "SLIP"
+                    ? "bg-emerald-500/25 text-emerald-300 border border-emerald-400/50 shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                SLIP (สลิป)
+              </button>
+            </div>
+
+            {/* Status Capsule with LED Pulsing State */}
+            {(() => {
+              const capsuleState = resolveWebHeaderStatus({
+                loading,
+                batchProgress,
+                evidence: evidenceState,
+                targetName,
+              });
+              return (
+                <div
+                  className="px-3.5 py-1.5 rounded-full flex items-center gap-2 border text-[12px] font-mono font-medium backdrop-blur-md transition-all shadow-sm"
+                  style={{
+                    borderColor: capsuleState.glowColor,
+                    backgroundColor: "rgba(15, 23, 42, 0.75)",
+                  }}
+                >
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      capsuleState.isPulsing ? "animate-ping" : "animate-pulse"
+                    }`}
+                    style={{ backgroundColor: capsuleState.color }}
+                  />
+                  <span style={{ color: capsuleState.color }}>
+                    {capsuleState.text}
+                  </span>
+                </div>
+              );
+            })()}
+
+            {/* PDPA Shield Toggle */}
+            <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-lg border border-white/10">
+              <span className="text-[12px] font-medium text-slate-300">🛡️ PDPA</span>
+              <button
+                onClick={() => setPdpaEnabled((p) => !p)}
+                className={`w-8 h-4 flex items-center rounded-full p-0.5 transition-colors ${
+                  pdpaEnabled ? "bg-emerald-500" : "bg-slate-700"
+                }`}
+              >
+                <div
+                  className={`bg-white w-3 h-3 rounded-full shadow-md transform transition-transform ${
+                    pdpaEnabled ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </button>
+              <span className={`text-[10px] font-mono font-bold ${pdpaEnabled ? "text-emerald-400" : "text-slate-500"}`}>
+                {pdpaEnabled ? "ON" : "OFF"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* =====================================================================
+            HEADER RIGHT: Real-Time Clock & Date + Quick Tool
+            ===================================================================== */}
+        <div className="flex items-center gap-5">
+          {/* Real-Time Clock & Date */}
+          <div className="flex flex-col items-end justify-center font-mono leading-tight">
+            <span className="text-[16px] font-bold text-slate-100 tracking-wider">
+              {formattedTimeStr}
+            </span>
+            <span className="text-[12px] text-slate-400 font-sans mt-0.5">
+              {formattedDateStr}
+            </span>
+          </div>
+
+          {/* Quick Tool Button */}
           <button
             onClick={() => setFullBookOpen(true)}
-            className="btn-proportional-compact glass-button glass-button-cyan"
+            style={{ padding: "10px 18px", fontSize: "13.5px" }}
+            className="glass-button glass-button-cyan rounded-lg font-semibold flex items-center gap-2 shadow-lg hover:scale-105 transition-transform"
           >
-            🖨️ รวมเล่มสำนวนศาล (5 หน้าเต็ม)
+            <span>🖨️ พิมพ์เอกสาร</span>
           </button>
         </div>
       </header>
