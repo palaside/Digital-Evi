@@ -1,0 +1,28 @@
+/* src/styles/headerA4.css */
+.header-a4 {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255,255,255,0.2);
+  backdrop-filter: blur(6px);
+  border-radius: 8px;
+  margin-bottom: 1rem; /* space before content */
+}
+.header-a4 img {
+  height: 32px;
+}
+.header-a4 .title {
+  font-weight: 600;
+}
+.header-a4 .subtitle {
+  font-weight: 400;
+  opacity: 0.8;
+}
+@media print {
+  .header-a4 {
+    background: transparent;
+    backdrop-filter: none;
+    margin-bottom: 0;
+  }
+}

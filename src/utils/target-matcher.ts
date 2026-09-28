@@ -66,7 +66,64 @@ export function stripThaiTitlePrefix(rawName: string | null | undefined): string
     }
   }
 
+  // 4. แก้ไขความคลาดเคลื่อน OCR ภาษาไทยยอดฮิต (OCR Typo Correction)
+  clean = clean.replace(/ประสาทหิรัญการ/g, "ประสาทเขตการ");
+  clean = clean.replace(/ประสาทเขตรการ/g, "ประสาทเขตการ");
+  clean = clean.replace(/จิณห์นิกา/g, "จิณห์นิภา");
+  clean = clean.replace(/จิณณ์ณิภา/g, "จิณห์นิภา");
+  clean = clean.replace(/จิณห์นิพา/g, "จิณห์นิภา");
+
   return clean.trim();
+}
+
+/**
+ * ทำความสะอาดชื่อเพื่อเทียบอัตลักษณ์เชิงสัทศาสตร์และอักขระ OCR ไทย (Phonetic & OCR Homoglyphs)
+ * รองรับความคลาดเคลื่อน OCR: ณ/น/ญ, ภ/พ, ห์/ณ์, ส/ศ/ษ, ด/ฎ, ต/ฏ, ถ/ฐ
+ */
+export function normalizeThaiPhonetic(str: string): string {
+  if (!str) return "";
+  let s = str.trim().toLowerCase();
+  // ตัดวรรณยุกต์และทัณฑฆาต (การันต์) เช่น ์ ่ ้ ๊ ๋
+  s = s.replace(/[\u0E48-\u0E4E\u0E3A]/g, "");
+  // แปลงอักขระ OCR คู่แฝด
+  s = s.replace(/[ญณ]/g, "น");
+  s = s.replace(/[ศษ]/g, "ส");
+  s = s.replace(/[ฎ]/g, "ด");
+  s = s.replace(/[ฏ]/g, "ต");
+  s = s.replace(/[ฐ]/g, "ถ");
+  s = s.replace(/[ภ]/g, "พ");
+  s = s.replace(/[ธฑ]/g, "ท");
+  s = s.replace(/[ฬ]/g, "ล");
+  return s;
+}
+
+/**
+ * คำนวณความคล้ายคลึงของข้อความภาษาไทย (Levenshtein Similarity 0.0 - 1.0)
+ */
+export function thaiSimilarity(s1: string, s2: string): number {
+  if (s1 === s2) return 1.0;
+  if (!s1 || !s2) return 0;
+  const longer = s1.length > s2.length ? s1 : s2;
+  if (longer.length === 0) return 1.0;
+
+  const costs: number[] = [];
+  for (let i = 0; i <= s1.length; i++) {
+    let lastValue = i;
+    for (let j = 0; j <= s2.length; j++) {
+      if (i === 0) costs[j] = j;
+      else if (j > 0) {
+        let newValue = costs[j - 1];
+        if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
+          newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+        }
+        costs[j - 1] = lastValue;
+        lastValue = newValue;
+      }
+    }
+    if (i > 0) costs[s2.length] = lastValue;
+  }
+  const dist = costs[s2.length];
+  return (longer.length - dist) / longer.length;
 }
 
 /**
@@ -75,11 +132,16 @@ export function stripThaiTitlePrefix(rawName: string | null | undefined): string
 export function isTargetMatch(extractedName: string | null | undefined, targetName: string | null | undefined): boolean {
   if (!extractedName || !targetName) return false;
 
-  const cleanExtracted = stripThaiTitlePrefix(extractedName).toLowerCase();
-  const cleanTarget = stripThaiTitlePrefix(targetName).toLowerCase();
+  const cleanExtracted = stripThaiTitlePrefix(extractedName).trim().toLowerCase();
+  const cleanTarget = stripThaiTitlePrefix(targetName).trim().toLowerCase();
 
   if (!cleanExtracted || !cleanTarget) return false;
   if (cleanExtracted === cleanTarget) return true;
+
+  // Normalized phonetic comparison (แก้ปัญหา OCR ณ vs น, ห์ vs ณ์)
+  const normExtracted = normalizeThaiPhonetic(cleanExtracted);
+  const normTarget = normalizeThaiPhonetic(cleanTarget);
+  if (normExtracted === normTarget) return true;
 
   // Partial substring match if longer than 3 chars
   if (cleanTarget.length >= 3 && cleanExtracted.includes(cleanTarget)) return true;
@@ -89,18 +151,33 @@ export function isTargetMatch(extractedName: string | null | undefined, targetNa
   const partsExtracted = cleanExtracted.split(/\s+/);
   const partsTarget = cleanTarget.split(/\s+/);
 
-  // ตรวจชื่อต้นตรงกัน
-  if (partsExtracted[0] && partsTarget[0] && partsExtracted[0] === partsTarget[0]) {
+  const normPartE = normalizeThaiPhonetic(partsExtracted[0] || "");
+  const normPartT = normalizeThaiPhonetic(partsTarget[0] || "");
+
+  // ตรวจชื่อต้นตรงกัน หรือมีความคล้ายคลึงสูง >= 0.65 (แก้ปัญหา OCR ภา vs กา)
+  const isFirstMatch = normPartE && normPartT && (normPartE === normPartT || thaiSimilarity(normPartE, normPartT) >= 0.65);
+
+  if (isFirstMatch) {
     // ถ้าระบุเป้าหมายแค่ชื่อต้นอย่างเดียว หรือนามสกุลในสลิปถูก Mask (เช่น ร***)
-    if (partsTarget.length === 1) return true;
+    if (partsTarget.length === 1 || partsExtracted.length === 1) return true;
     if (partsExtracted.length > 1 && partsTarget.length > 1) {
       const p1 = partsExtracted[1].replace(/\*/g, "");
       const p2 = partsTarget[1].replace(/\*/g, "");
-      if (p1 && p2 && (partsExtracted[1].startsWith(p2) || partsTarget[1].startsWith(p1))) {
-        return true;
+      if (p1 && p2) {
+        if (partsExtracted[1].startsWith(p2) || partsTarget[1].startsWith(p1)) return true;
+        // ตรวจสอบรากนามสกุลร่วม (Common Surname Root Prefix >= 3 chars e.g. 'ประสาท')
+        const np1 = normalizeThaiPhonetic(p1);
+        const np2 = normalizeThaiPhonetic(p2);
+        if (np1.length >= 3 && np2.length >= 3 && np1.slice(0, 3) === np2.slice(0, 3)) {
+          return true;
+        }
+        if (thaiSimilarity(np1, np2) >= 0.50) {
+          return true;
+        }
       }
     }
   }
 
   return false;
 }
+

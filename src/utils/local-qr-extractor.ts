@@ -105,12 +105,18 @@ export async function extractSlipLocally(imageSource: HTMLImageElement | File): 
   if (imageSource instanceof File) {
     img = new Image();
     objectUrlToRevoke = URL.createObjectURL(imageSource);
-    img.src = objectUrlToRevoke;
-    await img.decode();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Failed to load image file"));
+      img.src = objectUrlToRevoke!;
+    });
   } else {
     img = imageSource;
     if (!img.complete) {
-      await img.decode();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Failed to load image element"));
+      });
     }
   }
 

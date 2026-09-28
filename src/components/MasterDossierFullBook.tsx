@@ -7,6 +7,10 @@ import type { SlipExtraction } from "@/schemas/slip.schema";
 import CourtCoverSheet from "@/components/CourtCoverSheet";
 import ExecutiveSummarySheet from "@/components/ExecutiveSummarySheet";
 import HashManifestTable from "@/components/HashManifestTable";
+import { HeaderA4 } from "@/components/HeaderA4";
+import { ModeSelectorPanel } from "@/components/ModeSelectorPanel";
+import { LedgerColumnToggle, ledgerColumns } from "@/components/LedgerColumnToggle";
+import { useMode } from "@/context/ModeContext";
 import { LEGAL_DISCLAIMER_LINES } from "@/constants/forensic-ssot";
 import {
   resolveHeaderMode,
@@ -14,11 +18,22 @@ import {
   resolveHeaderPageNumber,
 } from "@/utils/forensic-header-machine";
 
+export interface StagedItemForBook {
+  id: string;
+  file: File;
+  previewUrl: string;
+  category: "SLIP" | "CHAT";
+  detectType?: string;
+  data?: SlipExtraction;
+  chatSlices?: string[];
+}
+
 interface Props {
   coverData: CourtCoverSheetData;
   evidenceState: ForensicEvidenceState;
   extractedSlip: SlipExtraction | null;
   previewImage: string | null;
+  stagedItems?: StagedItemForBook[];
   manifestEntries: HashManifestEntry[];
   caseNumber: string;
   suspectName?: string;
@@ -34,6 +49,7 @@ export default function MasterDossierFullBook({
   evidenceState,
   extractedSlip,
   previewImage,
+  stagedItems = [],
   manifestEntries,
   caseNumber,
   suspectName,
@@ -43,10 +59,38 @@ export default function MasterDossierFullBook({
   onClose,
   onJumpToSection,
 }: Props) {
-  // Pass 1: Total Pages Calculation
-  // Page 1: Cover, Page 2: Exec Summary, Page 3: Summary Table, Page 4: Evidence Canvas, Page 5: Hash Manifest & Sign-Off
-  const totalPages = 5;
+  // ...props
+}: Props) {
+  const { mode } = useMode();
+  const [ledgerRows, setLedgerRows] = React.useState<any[]>([]);
+  const [visibleCols, setVisibleCols] = React.useState<Record<string, boolean>>(() => {
+    const defaults: Record<string, boolean> = {};
+    ledgerColumns.forEach(col => { defaults[col.key] = true; });
+    return defaults;
+  });
 
+  React.useEffect(() => {
+    if (mode === 'SLIP') {
+      fetch('/api/ledger?mode=SLIP')
+        .then(res => res.json())
+        .then(data => setLedgerRows(data))
+        .catch(err => console.error('Failed to fetch ledger:', err));
+    }
+  }, [mode]);
+  coverData,
+  evidenceState,
+  extractedSlip,
+  previewImage,
+  stagedItems = [],
+  manifestEntries,
+  caseNumber,
+  suspectName,
+  investigatorName = "พ.ต.ท. สมศักดิ์ นิติการ",
+  investigatorPosition = "สารวัตรสอบสวน (กลุ่มงานพิสูจน์หลักฐานดิจิทัล)",
+  vaultPassword = "",
+  onClose,
+  onJumpToSection,
+}: Props) {
   const handlePrint = () => {
     window.print();
   };
@@ -63,6 +107,67 @@ export default function MasterDossierFullBook({
     slipPageRef: 1,
   });
 
+  // Dynamic Evidence Pages Compilation (Flattens multi-page chat slices & slips)
+  const compiledEvidencePages: Array<{
+    pageId: string;
+    category: "SLIP" | "CHAT";
+    imageUrl: string;
+    sliceLabel?: string;
+    corroborationText: string;
+  }> = [];
+
+  if (stagedItems && stagedItems.length > 0) {
+    stagedItems.forEach((item, itemIdx) => {
+      if (item.category === "CHAT" && item.chatSlices && item.chatSlices.length > 0) {
+        item.chatSlices.forEach((sliceUrl, sliceIdx) => {
+          const corroText = resolveHeaderCorroborated({
+            type: "CHAT",
+            itemIndex: itemIdx + 1,
+            targetName: suspectName || evidenceState.poiName,
+            amount: item.data?.transaction.amount || evidenceState.totalNetLoss,
+            isDuplicate: false,
+            chatHasSlip: evidenceState.slipCount > 0,
+            slipPageRef: 1,
+          });
+          compiledEvidencePages.push({
+            pageId: `${item.id}-slice-${sliceIdx}`,
+            category: "CHAT",
+            imageUrl: sliceUrl,
+            sliceLabel: `หน้าแชท ${sliceIdx + 1} / ${item.chatSlices!.length}`,
+            corroborationText: corroText,
+          });
+        });
+      } else {
+        const corroText = resolveHeaderCorroborated({
+          type: item.category,
+          itemIndex: itemIdx + 1,
+          targetName: suspectName || evidenceState.poiName,
+          amount: item.data?.transaction.amount || evidenceState.totalNetLoss,
+          isDuplicate: false,
+          chatHasSlip: evidenceState.slipCount > 0,
+          slipPageRef: 1,
+        });
+        compiledEvidencePages.push({
+          pageId: item.id,
+          category: item.category,
+          imageUrl: item.previewUrl,
+          corroborationText: corroText,
+        });
+      }
+    });
+  } else if (previewImage) {
+    compiledEvidencePages.push({
+      pageId: "single-preview",
+      category: "SLIP",
+      imageUrl: previewImage,
+      corroborationText: evidenceCorroboration,
+    });
+  }
+
+  // Pass 1: Total Pages Calculation
+  // 3 Front Matter Pages (Cover, Executive Summary, 10-Col Ledger) + N Evidence Pages + 1 Hash Manifest Page
+  const totalPages = 3 + (compiledEvidencePages.length > 0 ? compiledEvidencePages.length : 1) + 1;
+
   return (
     <div className="fixed inset-0 z-50 bg-[#070a0f]/95 backdrop-blur-xl flex flex-col overflow-hidden select-text text-slate-100">
       {/* Control Top Bar */}
@@ -75,10 +180,10 @@ export default function MasterDossierFullBook({
           />
           <div>
             <h2 className="font-bold text-sm text-slate-100">
-              MASTER COURT DOSSIER — เล่มสำนวนคดีฉบับสมบูรณ์ (5 ลำดับชั้นสารบรรณศาล)
+              MASTER COURT DOSSIER — เล่มสำนวนคดีฉบับสมบูรณ์ ({totalPages} ลำดับชั้นสารบรรณศาล)
             </h2>
             <p className="text-[11px] text-slate-400 font-mono">
-              TWO-PASS COMPILED : 5 หน้าเต็มเล่ม (ISO/IEC 27037 & ป.วิ.อ. 226/1)
+              TWO-PASS COMPILED : {totalPages} หน้าเต็มเล่ม (ISO/IEC 27037 & ป.วิ.อ. 226/1)
             </p>
           </div>
         </div>
@@ -107,13 +212,16 @@ export default function MasterDossierFullBook({
             ✕
           </button>
         </div>
+        {/* Insert Mode Selector Panel */}
+        <ModeSelectorPanel />
       </div>
 
       {/* Dossier Pages Scroll Container (Zero Blank Screen) */}
       <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-10 print:p-0 print:gap-0">
         {/* ===================================================================
-            ลำดับที่ 1 (แผ่นแรก): หน้าปกสำนวนศาล (PAGE : 1 / 5)
+            ลำดับที่ 1 (แผ่นแรก): หน้าปกสำนวนศาล (PAGE : 1 / totalPages)
             =================================================================== */}
+        <HeaderA4 />
         <div
           id="section-cover"
           className="w-full max-w-[850px] aspect-[1/1.414] shadow-2xl relative break-after-page print:shadow-none print:w-full print:h-screen"
@@ -122,7 +230,7 @@ export default function MasterDossierFullBook({
         </div>
 
         {/* ===================================================================
-            ลำดับที่ 2: ใบสรุปผู้บริหาร / ศาล / อัยการ (PAGE : 2 / 5)
+            ลำดับที่ 2: ใบสรุปผู้บริหาร / ศาล / อัยการ (PAGE : 2 / totalPages)
             =================================================================== */}
         <div
           id="section-executive"
@@ -136,7 +244,7 @@ export default function MasterDossierFullBook({
         </div>
 
         {/* ===================================================================
-            ลำดับที่ 3: ตารางสรุปรายการสลิป 10 คอลัมน์ แนวนอน (PAGE : 3 / 5)
+            ลำดับที่ 3: ตารางสรุปรายการสลิป 10 คอลัมน์ แนวนอน (PAGE : 3 / totalPages)
             =================================================================== */}
         <div
           id="section-ledger"
@@ -149,6 +257,8 @@ export default function MasterDossierFullBook({
                 <span className="text-3xl">📊</span>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
+                    <LedgerColumnToggle visible={visibleCols} setVisible={setVisibleCols} persist={true} />
+                    ตารางบัญชีนิติวิทยาศาสตร์และเส้นทางธุรกรรม ๑๐ คอลัมน์ (Financial Ledger)
                     ตารางบัญชีนิติวิทยาศาสตร์และเส้นทางธุรกรรม ๑๐ คอลัมน์ (Financial Ledger)
                   </h3>
                   <p className="text-[10px] text-slate-600">
@@ -164,6 +274,33 @@ export default function MasterDossierFullBook({
 
             {/* Table */}
             <div className="mt-4 border border-slate-300 rounded overflow-hidden">
+                <table className="w-full text-left border-collapse text-[10px]">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-300 font-bold text-slate-800">
+                      {ledgerColumns.filter(col => visibleCols[col.key]).map(col => (
+                        <th key={col.key} className="p-1.5 text-center">{col.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ledgerRows.length > 0 ? (
+                      ledgerRows.map((row, idx) => (
+                        <tr key={idx} className="border-b border-slate-200">
+                          {ledgerColumns.filter(col => visibleCols[col.key]).map(col => (
+                            <td key={col.key} className="p-1.5 text-center font-mono">{row[col.key]}</td>
+                          ))}
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={ledgerColumns.filter(col => visibleCols[col.key]).length} className="p-6 text-center text-slate-400">
+                          ไม่พบรายการสลิปในสำนวน (Pure Zero State)
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
               <table className="w-full text-left border-collapse text-[10px]">
                 <thead>
                   <tr className="bg-slate-100 border-b border-slate-300 font-bold text-slate-800">
@@ -220,71 +357,75 @@ export default function MasterDossierFullBook({
         </div>
 
         {/* ===================================================================
-            ลำดับที่ 4: พยานหลักฐานแผ่นสลิป / แชท (PAGE : 4 / 5)
+            ลำดับที่ 4 ถึง 3+N: พยานหลักฐานแผ่นสลิป / แชททุกหน้า A4
             =================================================================== */}
-        <div
-          id="section-evidence"
-          className="w-full max-w-[850px] aspect-[1/1.414] bg-white text-slate-900 rounded-lg p-8 shadow-2xl relative flex flex-col justify-between break-after-page print:shadow-none print:w-full print:h-screen"
-          style={{ fontFamily: "'Sarabun', sans-serif" }}
-        >
-          <div>
-            {/* Standard Evidence Ribbon Header (Y = 38px to 115px equivalent) */}
-            <div className="bg-[#F8FAFC] border border-[#CBD5E1] rounded p-3 mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <img
-                  src="/LOGO.png"
-                  alt="Emblem"
-                  className="h-12 w-auto object-contain select-none"
-                />
-                <div className="flex flex-col gap-0.5">
-                  <div className="flex items-center gap-1.5 text-xs text-[#111827]">
-                    <span className="font-extralight">MODE : </span>
-                    <span className="font-thin font-bold">SLIP</span>
+        {compiledEvidencePages.map((evPage, idx) => {
+          const pageNum = 4 + idx;
+          return (
+            <div
+              key={evPage.pageId}
+              id={`section-evidence-${idx}`}
+              className="w-full max-w-[850px] aspect-[1/1.414] bg-white text-slate-900 rounded-lg p-8 shadow-2xl relative flex flex-col justify-between break-after-page print:shadow-none print:w-full print:h-screen"
+              style={{ fontFamily: "'Sarabun', sans-serif" }}
+            >
+              <div>
+                {/* Standard Evidence Ribbon Header */}
+                <div className="bg-[#F8FAFC] border border-[#CBD5E1] rounded p-3 mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src="/LOGO.png"
+                      alt="Emblem"
+                      className="h-12 w-auto object-contain select-none"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1.5 text-xs text-[#111827]">
+                        <span className="font-extralight">MODE : </span>
+                        <span className="font-thin font-bold">{evPage.category}</span>
+                        {evPage.sliceLabel && (
+                          <span className="ml-2 font-mono text-[10px] text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-300 font-semibold">
+                            {evPage.sliceLabel}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-[#111827]">
+                        <span className="font-extralight">CORROBORATED : </span>
+                        <span className="font-thin text-[11px] text-[#111827] max-w-[480px] truncate">
+                          {evPage.corroborationText}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-[#111827]">
-                    <span className="font-extralight">CORROBORATED : </span>
-                    <span className="font-thin text-[11px] text-[#111827] max-w-[480px] truncate">
-                      {evidenceCorroboration}
+
+                  <div className="flex flex-col items-end gap-0.5 text-xs text-[#111827]">
+                    <div className="flex items-center gap-1">
+                      <span className="font-extralight">PAGE : </span>
+                      <span className="font-thin font-bold font-mono">{pageNum} / {totalPages}</span>
+                    </div>
+                    <span className="font-thin text-[10px] text-slate-500 font-mono">
+                      {nowFormatted}
                     </span>
                   </div>
                 </div>
+
+                {/* Evidence Image Display */}
+                <div className="my-4 h-[580px] flex items-center justify-center border border-dashed border-slate-300 rounded bg-slate-50 p-2">
+                  <img
+                    src={evPage.imageUrl}
+                    alt={`Evidence ${evPage.category}`}
+                    className="max-h-full max-w-full object-contain rounded shadow"
+                  />
+                </div>
               </div>
 
-              <div className="flex flex-col items-end gap-0.5 text-xs text-[#111827]">
-                <div className="flex items-center gap-1">
-                  <span className="font-extralight">PAGE : </span>
-                  <span className="font-thin font-bold font-mono">4 / {totalPages}</span>
-                </div>
-                <span className="font-thin text-[10px] text-slate-500 font-mono">
-                  {nowFormatted}
-                </span>
+              <div className="text-[8px] text-slate-500 text-center leading-relaxed pt-2 border-t border-slate-200 shrink-0">
+                {LEGAL_DISCLAIMER_LINES.join(" ")}
               </div>
             </div>
-
-            {/* Evidence Image Center Display */}
-            <div className="my-4 h-[580px] flex items-center justify-center border border-dashed border-slate-300 rounded bg-slate-50 p-2">
-              {previewImage ? (
-                <img
-                  src={previewImage}
-                  alt="Evidence Slip"
-                  className="max-h-full max-w-full object-contain rounded shadow"
-                />
-              ) : (
-                <div className="text-center text-slate-400">
-                  <span className="text-4xl block mb-2">📄</span>
-                  <span className="text-xs">รอการนำเข้าไฟล์ภาพสลิปพยานหลักฐาน</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="text-[8px] text-slate-500 text-center leading-relaxed pt-2 border-t border-slate-200 shrink-0">
-            {LEGAL_DISCLAIMER_LINES.join(" ")}
-          </div>
-        </div>
+          );
+        })}
 
         {/* ===================================================================
-            ลำดับที่ 5 (แผ่นปิดท้าย): บัญชีคุมค่าแฮช + บล็อกลงลายมือชื่อ (PAGE : 5 / 5)
+            ลำดับที่ปิดท้าย (PAGE : totalPages / totalPages): บัญชีคุมค่าแฮช + บล็อกลงลายมือชื่อ
             =================================================================== */}
         <div
           id="section-manifest"
@@ -295,7 +436,7 @@ export default function MasterDossierFullBook({
             caseNumber={caseNumber}
             investigatorName={investigatorName}
             investigatorPosition={investigatorPosition}
-            pageNumber={`5 / ${totalPages}`}
+            pageNumber={`${totalPages} / ${totalPages}`}
           />
         </div>
       </div>
