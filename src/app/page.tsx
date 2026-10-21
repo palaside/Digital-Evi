@@ -3435,6 +3435,11 @@ export default function MasterEvidenceWorkspace() {
                                   {record.receiverNameOcrConflict ? "แก้ชื่อจากข้อเสนอแล้ว · ผล OCR เดิมยังขัดแย้ง · รอตรวจยืนยัน" : "ผู้ใช้แก้/กรอกชื่อแล้ว · รอตรวจยืนยัน"}
                                 </div>
                               )}
+                              {record.receiverNameOcrConflict && !record.receiverNameManuallyReviewed && (
+                                <div className="mt-1 text-[9px] text-amber-300">
+                                  ชื่อจาก OCR ในกรอบสลิปและทั้งหน้าตรงกัน · รอบอ่านซ้ำต่างกัน · รอตรวจจากภาพ
+                                </div>
+                              )}
                               {record.corroboratedRecipientName && (
                                 <div className="mt-1 flex flex-wrap items-center justify-between gap-2 rounded border border-amber-300/20 bg-amber-300/5 px-2 py-1.5 text-[10px]">
                                   <span className="min-w-0 text-amber-100">
@@ -3477,14 +3482,14 @@ export default function MasterEvidenceWorkspace() {
                 {slipRecipientSummary.unassignedRecords.length > 0 && (
                   <div className="space-y-1.5 border-t border-amber-400/20 pt-2">
                     <div className="text-[10px] font-semibold text-amber-300">
-                      สลิปที่ยังอ่านชื่อผู้รับไม่ได้ ({slipRecipientSummary.unassignedRecords.length})
+                      สลิปที่ชื่อผู้รับยังสรุปไม่ได้ ({slipRecipientSummary.unassignedRecords.length})
                     </div>
                     {slipRecipientSummary.unassignedRecords.map((record) => (
                       <div key={record.id} className="rounded-lg border border-amber-400/20 bg-amber-500/5 px-2.5 py-2">
                         <div className="flex items-center justify-between gap-2 text-xs">
                           <span className="font-semibold text-slate-100">
                             {record.receiverNameNeedsReview
-                              ? "OCR อ่านชื่อผู้รับซ้ำได้ผลต่างกัน · ต้องตรวจจากภาพ"
+                              ? "OCR ชื่อผู้รับยังไม่ตรงกัน · ต้องตรวจจากภาพ"
                               : "ชื่อผู้รับอ่านไม่ได้"}
                           </span>
                           <span className="shrink-0 font-mono font-bold text-amber-300">
@@ -3503,8 +3508,7 @@ export default function MasterEvidenceWorkspace() {
                             >เติมชื่อเพื่อทบทวน</button>
                           </div>
                         )}
-                        <div className="mt-1 flex items-center justify-between gap-2 text-[10px]">
-                          <span className="text-slate-300">จำนวนเงิน {record.amount !== null ? `฿${record.amount.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "อ่านไม่ได้"}</span>
+                        <div className="mt-1 flex justify-end text-[10px]">
                           <button type="button" onClick={() => openSlipSourcePage(record)} className="shrink-0 text-sky-300 underline">เปิดหน้าพร้อมชี้ตำแหน่ง</button>
                         </div>
                         <div className="mt-0.5 text-[9px] text-slate-500">

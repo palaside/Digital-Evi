@@ -16,6 +16,63 @@ export interface TargetPersonItem {
   txCount?: number;
 }
 
+export type DetectedTargetPerson = Omit<TargetPersonItem, "id" | "selected">;
+
+export function buildDetectedTargetPeople(records: Array<{
+  id: string;
+  data: {
+    receiver?: { name?: string | null; account_no?: string | null; bank?: string | null };
+    bank?: { name?: string | null };
+    transaction?: { amount?: number | null };
+  };
+}>): Array<DetectedTargetPerson & { totalAmount: number; txCount: number }> {
+  const people = new Map<string, Omit<DetectedTargetPerson, "totalAmount" | "txCount"> & {
+    totalAmount: number;
+    txCount: number;
+    seenTransactionKeys: Set<string>;
+  }>();
+
+  for (const record of records) {
+    const rawName = record.data.receiver?.name?.trim();
+    const cleanName = stripThaiTitlePrefix(rawName);
+    if (!rawName || !cleanName) continue;
+
+    const existingName = findExactTargetIdentity(Array.from(people.keys()), cleanName, (name) => name);
+    if (existingName) {
+      const existing = people.get(existingName)!;
+      if (cleanName.includes("เขต") || (!existing.cleanName.includes("เขต") && !cleanName.includes("หิรัญ"))) {
+        existing.cleanName = cleanName;
+        existing.rawName = rawName;
+      }
+      if (record.data.receiver?.account_no && record.data.receiver.account_no !== "-") {
+        existing.accountNo = record.data.receiver.account_no;
+      }
+      if (record.data.receiver?.bank && !existing.bank) existing.bank = record.data.receiver.bank;
+
+      const transactionKey = `id:${record.id}`;
+      if (!existing.seenTransactionKeys.has(transactionKey)) {
+        existing.seenTransactionKeys.add(transactionKey);
+        existing.totalAmount = (existing.totalAmount ?? 0) + (record.data.transaction?.amount || 0);
+        existing.txCount = (existing.txCount ?? 0) + 1;
+      }
+      continue;
+    }
+
+    people.set(cleanName, {
+      rawName,
+      cleanName,
+      role: "ผู้รับโอน",
+      accountNo: record.data.receiver?.account_no || "-",
+      bank: record.data.receiver?.bank || record.data.bank?.name || "ธนาคาร",
+      totalAmount: record.data.transaction?.amount || 0,
+      txCount: 1,
+      seenTransactionKeys: new Set([`id:${record.id}`]),
+    });
+  }
+
+  return Array.from(people.values()).map(({ seenTransactionKeys: _seen, ...person }) => person);
+}
+
 /**
  * ฟังก์ชันลอกคำนำหน้าชื่อทุกมิติ (Zero-Prefix Stripping Engine)
  * ครอบคลุม: ยศตำรวจ, ยศทหาร, วิชาการ, แพทย์, ฐานันดรศักดิ์, คำนำหน้าทั่วไป, นิติบุคคล, ภาษาอังกฤษ และวงเล็บเลขบัญชี
@@ -35,6 +92,9 @@ export function stripThaiTitlePrefix(rawName: string | null | undefined): string
   // 3. พจนานุกรมคำนำหน้าชื่อภาษาไทยและยศทุกประเภท
   const prefixes = [
     // ยศตำรวจ
+    "พลตำรวจเอก", "พลตำรวจโท", "พลตำรวจตรี", "พันตำรวจเอก", "พันตำรวจโท", "พันตำรวจตรี",
+    "ร้อยตำรวจเอก", "ร้อยตำรวจโท", "ร้อยตำรวจตรี", "ดาบตำรวจ", "จ่าสิบตำรวจ",
+    "สิบตำรวจเอก", "สิบตำรวจโท", "สิบตำรวจตรี",
     "พล.ต.อ.หญิง", "พล.ต.อ.", "พล.ต.ท.หญิง", "พล.ต.ท.", "พล.ต.ต.หญิง", "พล.ต.ต.",
     "พ.ต.อ.หญิง", "พ.ต.อ.", "พ.ต.ท.หญิง", "พ.ต.ท.", "พ.ต.ต.หญิง", "พ.ต.ต.",
     "ร.ต.อ.หญิง", "ร.ต.อ.", "ร.ต.ท.หญิง", "ร.ต.ท.", "ร.ต.ต.หญิง", "ร.ต.ต.",
@@ -42,36 +102,44 @@ export function stripThaiTitlePrefix(rawName: string | null | undefined): string
     // ยศทหารบก / เรือ / อากาศ
     "พล.อ.", "พล.ท.", "พล.ต.", "พ.อ.", "พ.ท.", "พ.ต.", "ร.อ.", "ร.ท.", "ร.ต.",
     "จ.ส.อ.", "จ.ส.ท.", "จ.ส.ต.", "ส.อ.", "ส.ท.", "ส.ต.", "ว่าที่ ร.ต.", "ว่าที่ร.ต.",
+    "ว่าที่ร้อยตรีหญิง", "ว่าที่ร้อยตรี", "ว่าที่ ร.ต.หญิง", "ว่าที่ ร.ต", "ว่าที่ร้อยโท", "ว่าที่ ร.ท.",
+    "ว่าที่ร้อยเอก", "ว่าที่ ร.อ.", "พลเอก", "พลโท", "พลตรี", "พันเอก", "พันโท", "พันตรี",
+    "ร้อยเอก", "ร้อยโท", "ร้อยตรี", "จ่าสิบเอก", "จ่าสิบโท", "จ่าสิบตรี", "สิบเอก", "สิบโท", "สิบตรี", "พลทหาร",
     // ตำแหน่งวิชาการ / การแพทย์
-    "ศ.ดร.", "รศ.ดร.", "ผศ.ดร.", "ศ.", "รศ.", "ผศ.", "ดร.", "นพ.", "พญ.", "ทพ.", "ทพญ.", "ภก.", "ภญ.", "อ.",
+    "ศาสตราจารย์ ดร\\.", "ศาสตราจารย์", "รองศาสตราจารย์ ดร\\.", "รองศาสตราจารย์",
+    "ผู้ช่วยศาสตราจารย์ ดร\\.", "ผู้ช่วยศาสตราจารย์", "อาจารย์ ดร\\.", "อาจารย์", "นายแพทย์", "แพทย์หญิง",
+    "ทันตแพทย์หญิง", "ทันตแพทย์", "เภสัชกรหญิง", "เภสัชกร", "สัตวแพทย์หญิง", "สัตวแพทย์", "สพญ\\.", "สพ\\.",
+    "ศ.ดร.", "รศ.ดร.", "ผศ.ดร.", "อ.ดร.", "ศ.", "รศ.", "ผศ.", "ดร.", "ดร", "นพ.", "พญ.", "ทพ.", "ทพญ.", "ภก.", "ภญ.", "อ.",
     // ฐานันดรศักดิ์
-    "ม.ร.ว.", "ม.ล.", "ม.จ.", "หม่อมราชวงศ์", "หม่อมหลวง",
+    "หม่อมราชวงศ์", "หม่อมหลวง", "หม่อมเจ้า", "ม.ร.ว.", "ม.ร.ว", "ม.ล.", "ม.ล", "ม.จ.", "ม.จ",
     // คำนำหน้าสามัญชน
-    "เด็กชาย", "เด็กหญิง", "ด.ช.", "ด.ญ.", "นางสาว", "น.ส.", "นาย", "นาง", "คุณ", "ท่าน",
+    "เด็กชาย", "เด็กหญิง", "ด.ช.", "ด.ช", "ดช.", "ดช", "ด.ญ.", "ด.ญ", "ดญ.", "ดญ", "นางสาว", "น.ส.", "น.ส", "นส.", "นส", "นาย", "นาง", "คุณ", "ท่าน",
+    // สมณศักดิ์/คำนำหน้าทางศาสนาตามรายการในสกิล
+    "พระครูปลัด", "พระครู", "พระมหา", "พระอาจารย์", "พระภิกษุ", "สามเณร", "พระ",
     // นิติบุคคล / ห้างร้าน
     "บริษัท", "บจก.", "บมจ.", "ห้างหุ้นส่วนจำกัด", "หจก.", "ร้าน",
     // ภาษาอังกฤษ
-    "Mr\\.", "Mrs\\.", "Miss", "Ms\\.", "Dr\\.", "Prof\\.", "Pol\\.", "Gen\\.", "Col\\.", "Capt\\."
+    "Mr\\.", "Mr", "Mrs\\.", "Mrs", "Miss", "Ms\\.", "Ms", "Dr\\.", "Dr", "Prof\\.", "Prof", "Assn\\.",
+    "Pol\\.Maj\\.Gen\\.", "Pol\\.Lt\\.Col\\.", "Pol\\.Gen\\.", "Pol\\.Maj\\.", "Pol\\.Col\\.", "Pol\\.Capt\\.", "Pol\\.Lt\\.",
+    "Lt\\.Gen\\.", "Maj\\.Gen\\.", "Lt\\.Col\\.", "Gen\\.", "Maj\\.", "Col\\.", "Capt\\.", "Lt\\.", "Sgt\\."
   ];
 
   // เรียงลำดับจากยาวไปสั้นเพื่อป้องกันการตัดคำผิดพลาด (เช่น 'นางสาว' ต้องตัดก่อน 'นาง')
   prefixes.sort((a, b) => b.length - a.length);
 
   // ทำการตัดคำนำหน้าออก
-  for (const prefix of prefixes) {
-    const regex = new RegExp("^" + prefix + "\\s*", "i");
-    if (regex.test(clean)) {
-      clean = clean.replace(regex, "").trim();
-      break;
+  let strippedPrefix = true;
+  while (strippedPrefix) {
+    strippedPrefix = false;
+    for (const prefix of prefixes) {
+      const regex = new RegExp("^" + prefix + "\\s*", "i");
+      if (regex.test(clean)) {
+        clean = clean.replace(regex, "").trim();
+        strippedPrefix = true;
+        break;
+      }
     }
   }
-
-  // 4. แก้ไขความคลาดเคลื่อน OCR ภาษาไทยยอดฮิต (OCR Typo Correction)
-  clean = clean.replace(/ประสาทหิรัญการ/g, "ประสาทเขตการ");
-  clean = clean.replace(/ประสาทเขตรการ/g, "ประสาทเขตการ");
-  clean = clean.replace(/จิณห์นิกา/g, "จิณห์นิภา");
-  clean = clean.replace(/จิณณ์ณิภา/g, "จิณห์นิภา");
-  clean = clean.replace(/จิณห์นิพา/g, "จิณห์นิภา");
 
   return clean.trim();
 }
@@ -179,5 +247,80 @@ export function isTargetMatch(extractedName: string | null | undefined, targetNa
   }
 
   return false;
+}
+
+/** Exact full-name comparison for financial inclusion; fuzzy OCR matching is review-only. */
+export function isExactTargetMatch(extractedName: string | null | undefined, targetName: string | null | undefined): boolean {
+  if (!extractedName || !targetName) return false;
+  const normalizeExactName = (value: string) => stripThaiTitlePrefix(value)
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
+  const extracted = normalizeExactName(extractedName);
+  const target = normalizeExactName(targetName);
+  return Boolean(extracted && target && extracted === target);
+}
+
+export function findExactTargetIdentity<T>(
+  candidates: readonly T[],
+  targetName: string | null | undefined,
+  getName: (candidate: T) => string | null | undefined,
+): T | undefined {
+  return candidates.find((candidate) => isExactTargetMatch(getName(candidate), targetName));
+}
+
+export function mergeDetectedTargetList(
+  detectedNames: readonly DetectedTargetPerson[],
+  previousTargets: readonly TargetPersonItem[],
+): TargetPersonItem[] {
+  let merged: TargetPersonItem[] = [];
+
+  detectedNames.forEach((person) => {
+    const existingIndex = merged.findIndex((item) => isExactTargetMatch(item.cleanName, person.cleanName));
+    if (existingIndex >= 0) {
+      const existing = merged[existingIndex];
+      const useIncomingName = person.cleanName.includes("เขต")
+        || (!existing.cleanName.includes("เขต") && !person.cleanName.includes("หิรัญ"));
+      merged = merged.map((item, index) => index === existingIndex
+        ? {
+          ...item,
+          totalAmount: Math.max(item.totalAmount || 0, person.totalAmount || 0),
+          txCount: Math.max(item.txCount || 1, person.txCount || 1),
+          ...(useIncomingName ? { cleanName: person.cleanName, rawName: person.rawName } : {}),
+        }
+        : item);
+      return;
+    }
+
+    const existing = findExactTargetIdentity(previousTargets, person.cleanName, (item) => item.cleanName);
+    if (existing) {
+      merged.push({
+        ...existing,
+        cleanName: person.cleanName.includes("เขต") ? person.cleanName : existing.cleanName,
+        totalAmount: person.totalAmount,
+        txCount: person.txCount,
+      });
+      return;
+    }
+
+    merged.push({
+      id: `poi-auto-${person.cleanName.replace(/\s+/g, "_")}`,
+      rawName: person.rawName,
+      cleanName: person.cleanName,
+      role: person.role,
+      accountNo: person.accountNo,
+      bank: person.bank,
+      selected: false,
+      totalAmount: person.totalAmount,
+      txCount: person.txCount,
+    });
+  });
+
+  const manualTargets = previousTargets.filter(
+    (target) => target.id.startsWith("poi-manual-")
+      && !findExactTargetIdentity(merged, target.cleanName, (item) => item.cleanName),
+  ).map((target) => ({ ...target }));
+
+  return [...merged, ...manualTargets];
 }
 
