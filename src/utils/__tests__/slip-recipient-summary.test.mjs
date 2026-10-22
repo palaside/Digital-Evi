@@ -100,6 +100,7 @@ test("withholds a recipient name from person totals when focused OCR retries con
   assert.equal(summary.groups.length, 0);
   assert.equal(summary.unassignedRecords.length, 1);
   assert.equal(summary.unassignedRecords[0].receiverNameNeedsReview, true);
+  assert.equal(summary.unassignedRecords[0].ocrProposedRecipientName, "จิณห์นิภา บุญประเสรีชฐ");
   assert.deepEqual(summary.unassignedRecords[0].missingFields, ["ชื่อผู้รับ"]);
   assert.equal(summary.unassignedRecords[0].amount, 1000);
 });

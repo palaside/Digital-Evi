@@ -774,6 +774,13 @@ export default function MasterEvidenceWorkspace() {
   };
 
   // Phase 1: Ingest files into Staging Buffer — INSTANT local intake (< 50ms, zero network blocking)
+  const resetSearchSlipScan = () => {
+    setPdfPageMap({});
+    setSearchSlipScanCandidates([]);
+    setSearchSlipScanStatus({ state: "idle", message: "" });
+    setExportStatus(null);
+  };
+
   const stageIncomingFiles = async (files: FileList | File[]) => {
     const rawList = Array.from(files);
     const imageFiles = rawList.filter((f) => f.type.startsWith("image/") || /\.(png|jpe?g|webp|bmp)$/i.test(f.name));
@@ -819,6 +826,7 @@ export default function MasterEvidenceWorkspace() {
       ? `บางไฟล์คำนวณ SHA-256 ไม่สำเร็จและยังไม่ถูกเพิ่มเข้าคิว: ${failedFiles.join(", ")}`
       : null);
     setAiScanMessage(null);
+    resetSearchSlipScan();
 
     // Update Staging Buffer IMMEDIATELY (< 50ms)
     setStagedQueue((prev) => {
@@ -846,6 +854,7 @@ export default function MasterEvidenceWorkspace() {
   // Remove a single item from the staging buffer
   const removeStagedItem = (id: string) => {
     setAiScanMessage(null);
+    resetSearchSlipScan();
     setStagedQueue((prev) => {
       const next = prev.filter((item) => item.id !== id);
       if (next.length === 0) {
@@ -865,6 +874,7 @@ export default function MasterEvidenceWorkspace() {
     });
     setStagedQueue([]);
     setAiScanMessage(null);
+    resetSearchSlipScan();
     setManifestList([]);
     setTargetListSnapshot([]);
     setTargetName("");
@@ -888,6 +898,7 @@ export default function MasterEvidenceWorkspace() {
     setLoading(true);
     setErrorMsg(null);
     setAiScanMessage(null);
+    resetSearchSlipScan();
 
     const orderedBatch = prepareImageBatch(stagedQueue.map((item) => ({
       id: item.id,
@@ -2244,14 +2255,19 @@ export default function MasterEvidenceWorkspace() {
   };
 
   const indexExportedPdfPages = async (pdfBlob: Blob) => {
-    const descriptors = [...new Map(ledgerRecords.map((record) => {
-      const key = makePdfPageMapKey(record.source, record.sha256, record.chatPage);
-      return [key, {
-        key,
-        source_file: record.source,
-        page_label: record.chatPage === "-" ? record.source : `หน้าแชท ${record.chatPage}`,
-      }];
-    })).values()];
+    const { descriptors } = buildEvidenceContentPageDescriptors(ledgerRecords.map((record) => ({
+      id: makePdfPageMapKey(record.source, record.sha256, record.chatPage),
+      sourceItemId: record.sourceItemId,
+      chatPage: record.chatPage,
+    })), stagedQueue.map((item) => ({
+      id: item.id,
+      fileName: item.file.name,
+      category: item.category,
+      stitchedIntoItemId: item.stitchedIntoItemId,
+      chatStreamPageNumbers: item.chatStreamPageNumbers,
+      chatSlices: item.chatSlices,
+    })));
+    if (descriptors.length === 0) throw new Error("ไม่มีรายการที่ผูกกับหน้าหลักฐานใน PDF ได้");
     const form = new FormData();
     form.append("pdf", pdfBlob, "evidence.pdf");
     form.append("descriptors", JSON.stringify(descriptors));
@@ -3496,6 +3512,11 @@ export default function MasterEvidenceWorkspace() {
                             {record.amount !== null ? `฿${record.amount.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "ยอดอ่านไม่ได้"}
                           </span>
                         </div>
+                        {record.ocrProposedRecipientName && (
+                          <div className="mt-1 text-[10px] text-amber-100">
+                            OCR เสนอ: <strong>{record.ocrProposedRecipientName}</strong> · รอตรวจจากภาพ
+                          </div>
+                        )}
                         {record.suggestedRecipientName && (
                           <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 rounded border border-amber-300/20 bg-amber-300/5 px-2 py-1.5 text-[10px]">
                             <span className="min-w-0 text-amber-100">

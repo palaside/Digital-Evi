@@ -1,0 +1,9 @@
+# Tested with Python 3.12 for PDF/SFX export and Search_Slip scanning.
+# Tesseract OCR executable and script/Thai language data are installed separately.
+pypdf==6.21.2
+reportlab==5.0.1
+PyMuPDF==2.0
+opencv-contrib-python-headless==4.12.0.88
+numpy==2.2.6
+pytesseract==0.3.13
+openpyxl==3.1.5

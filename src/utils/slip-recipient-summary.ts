@@ -35,6 +35,7 @@ export interface SlipRecipientSummaryRecord extends DetectedSlipRecipientRecord 
   missingFields: string[];
   suggestedRecipientName?: string;
   suggestedFromOccurrenceId?: string;
+  ocrProposedRecipientName?: string;
   corroboratedRecipientName?: string;
   corroboratedFromOccurrenceId?: string;
   receiverNameNeedsReview: boolean;
@@ -84,9 +85,9 @@ export function summarizeDetectedSlipRecipients(records: DetectedSlipRecipientRe
     const receiverNameManuallyReviewed = hasManuallyReviewedRecipientName(record);
     const receiverNameNeedsReview = (receiverNameOcrConflict && !receiverNameManuallyReviewed)
       || (receiverNameManuallyReviewed && !record.isConfirmed);
-    const extractedName = (hasUnresolvedRecipientNameRetryConflict(record) ? "" : removeThaiTitlePrefix(record.data.receiver?.name))
-      .replace(/\s+/g, " ")
-      .trim();
+    const unresolvedOcrConflict = hasUnresolvedRecipientNameRetryConflict(record);
+    const proposedName = removeThaiTitlePrefix(record.data.receiver?.name).replace(/\s+/g, " ").trim();
+    const extractedName = unresolvedOcrConflict ? "" : proposedName;
     const evidenceCandidates = getExactEvidenceKey(record)
       ? evidenceNameCandidates.get(getExactEvidenceKey(record)!)
       : undefined;
@@ -127,6 +128,7 @@ export function summarizeDetectedSlipRecipients(records: DetectedSlipRecipientRe
       receiverNameNeedsReview,
       receiverNameOcrConflict,
       receiverNameManuallyReviewed,
+      ...(unresolvedOcrConflict && proposedName ? { ocrProposedRecipientName: proposedName } : {}),
       ...(corroboratedName ? {
         corroboratedRecipientName: corroboratedName.name,
         corroboratedFromOccurrenceId: corroboratedName.occurrenceId,
